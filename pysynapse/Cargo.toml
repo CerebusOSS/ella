@@ -1,0 +1,15 @@
+[package]
+name = "pysynapse"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pysynapse"
+crate-type = ["cdylib"]
+
+[dependencies]
+synapse = { path="../synapse" }
+
+[dependencies.pyo3]
+version = "0.18.2"
+features = ["extension-module"]

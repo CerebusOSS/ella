@@ -1,0 +1,16 @@
+[package]
+name = "synapse-tensor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+arrow = "40.0.0"
+smallvec = { version="1.10.0", features=["serde"] }
+derive_more = { workspace = true }
+serde = { workspace = true }
+num-traits = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }
+serde_json = { workspace = true }
+paste = { workspace = true }
+sealed = "0.5.0"

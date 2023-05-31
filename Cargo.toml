@@ -1,0 +1,30 @@
+[workspace]
+members = ["synapse", "synapse_tensor", "synapse_runtime", "pysynapse"]
+resolver = "2"
+
+[workspace.dependencies]
+derive_more = "0.99.17"
+serde = { version = "1.0.160", features = ["derive"] }
+num-traits = "0.2.15"
+time = { version="0.3.20", features=["serde-well-known"] }
+thiserror = "1.0.40"
+serde_json = "1.0.96"
+paste = "1.0.12"
+datafusion = "25.0.0"
+arrow-schema = { version = "40.0.0", features = ["serde"] }
+parquet = "40.0.0"
+tracing = "0.1.37"
+# parquet = { git = "https://github.com/apache/arrow-rs", rev = "77aa8f5", features = ["async"] }
+
+[patch.crates-io]
+datafusion = { git = "https://github.com/apache/arrow-datafusion" }
+parquet = { git = "https://github.com/dexterduck/arrow-rs.git", branch = "object-store-rollback" }
+arrow = { git = "https://github.com/dexterduck/arrow-rs.git", branch = "object-store-rollback" }
+arrow-array = { git = "https://github.com/dexterduck/arrow-rs.git", branch = "object-store-rollback" }
+arrow-buffer = { git = "https://github.com/dexterduck/arrow-rs.git", branch = "object-store-rollback" }
+arrow-cast = { git = "https://github.com/dexterduck/arrow-rs.git", branch = "object-store-rollback" }
+arrow-data = { git = "https://github.com/dexterduck/arrow-rs.git", branch = "object-store-rollback" }
+arrow-ipc = { git = "https://github.com/dexterduck/arrow-rs.git", branch = "object-store-rollback" }
+arrow-schema = { git = "https://github.com/dexterduck/arrow-rs.git", branch = "object-store-rollback" }
+arrow-select = { git = "https://github.com/dexterduck/arrow-rs.git", branch = "object-store-rollback" }
+# object_store_5_6 = { git = "https://github.com/apache/arrow-rs", version="0.5.6", package="object_store" }
