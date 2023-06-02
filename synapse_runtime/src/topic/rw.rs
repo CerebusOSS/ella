@@ -40,7 +40,7 @@ impl RwBuffer {
     pub fn new(topic: TopicId, shards: Arc<ShardManager>, config: RwBufferConfig) -> Self {
         let schema = shards.schema();
         let buffer = Arc::new(RwLock::new(BatchWriteBuffer::new(&schema)));
-        let (input, recv) = mpsc::channel(100);
+        let (input, recv) = mpsc::channel(config.queue_size);
         let pending = Arc::new(PendingQueue::new());
         let stop = Arc::new(Notify::new());
 
@@ -75,7 +75,7 @@ impl RwBuffer {
         match self.input.try_send(batch) {
             Ok(_) => Ok(()),
             Err(TrySendError::Closed(_)) => Err(crate::Error::TopicUnavailable(self.topic.clone())),
-            Err(TrySendError::Full(_)) => Err(crate::Error::TopicQueueFull(self.topic.clone()))
+            Err(TrySendError::Full(_)) => Err(crate::Error::TopicQueueFull(self.topic.clone())),
         }
         // if let Err(_error) = self.input.try_send(batch) {
         //     tracing::error!(topic=?self.topic, "failed to write record batch to table");

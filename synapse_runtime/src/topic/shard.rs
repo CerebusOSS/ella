@@ -133,7 +133,7 @@ impl ShardManager {
         let topic = state.id.clone();
         let path = state.path.clone();
         let shards = Arc::new(ShardSet::new(ctx.clone(), state));
-        let (input, output) = mpsc::channel(10);
+        let (input, output) = mpsc::channel(config.queue_size);
         let stop = Arc::new(Notify::new());
         let worker = ShardWriterWorker {
             schema: schema.clone(),
@@ -348,7 +348,7 @@ pub struct JobHandle {
 
 impl JobHandle {
     pub fn new(shard: SingleShardWriter) -> Self {
-        let (input, output) = mpsc::channel(10);
+        let (input, output) = mpsc::channel(shard.config.queue_size);
         let handle = tokio::spawn(Self::run(output, shard));
         Self { handle, input }
     }
@@ -388,6 +388,7 @@ pub struct SingleShardWriter {
     num_rows: usize,
     shards: Arc<ShardSet>,
     ctx: Arc<SynapseContext>,
+    config: ShardConfig,
 }
 
 impl SingleShardWriter {
@@ -423,6 +424,7 @@ impl SingleShardWriter {
             ctx,
             file,
             shards,
+            config: cfg.clone(),
             num_rows: 0,
         })
     }

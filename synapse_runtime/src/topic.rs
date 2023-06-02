@@ -55,7 +55,11 @@ impl Topic {
             shards.clone(),
             config.rw_buffer_config(),
         ));
-        let streaming = Arc::new(StreamingTable::new(id.clone(), rw.clone()));
+        let streaming = Arc::new(StreamingTable::new(
+            id.clone(),
+            rw.clone(),
+            config.streaming_config(),
+        ));
 
         Self {
             id,

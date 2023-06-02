@@ -31,7 +31,7 @@ use tokio::{
 };
 use tokio_util::sync::ReusableBoxFuture;
 
-use super::RwBuffer;
+use super::{config::StreamingConfig, RwBuffer};
 use crate::{catalog::TopicId, ArrowSchema, Schema};
 
 #[derive(Debug, Clone)]
@@ -192,9 +192,9 @@ pub struct StreamingTable {
 }
 
 impl StreamingTable {
-    pub fn new(topic: TopicId, rw: Arc<RwBuffer>) -> Self {
+    pub fn new(topic: TopicId, rw: Arc<RwBuffer>, config: StreamingConfig) -> Self {
         let schema = rw.schema();
-        let (pub_send, pub_recv) = mpsc::channel(100);
+        let (pub_send, pub_recv) = mpsc::channel(config.queue_size);
         let (sub_send, _) = broadcast::channel(100);
         let subscribe = Arc::new(sub_send);
 

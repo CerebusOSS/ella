@@ -3,14 +3,20 @@ pub struct TopicConfig {
     pub rw_buffer_capacity: usize,
     pub target_shard_size: usize,
     pub min_shard_size: usize,
+    pub streaming_queue_size: usize,
+    pub rw_queue_size: usize,
+    pub shard_queue_size: usize,
 }
 
 impl Default for TopicConfig {
     fn default() -> Self {
         Self {
-            rw_buffer_capacity: 1024,              // ~1K rows
+            rw_buffer_capacity: 128 * 1024,        // ~128K rows
             min_shard_size: 1024 * 1024,           // ~1M rows
             target_shard_size: 1024 * 1024 * 1024, // ~1B rows
+            streaming_queue_size: 1024,
+            rw_queue_size: 1024,
+            shard_queue_size: 128,
         }
     }
 }
@@ -31,9 +37,16 @@ impl TopicConfig {
         self
     }
 
+    pub(crate) fn streaming_config(&self) -> StreamingConfig {
+        StreamingConfig {
+            queue_size: self.streaming_queue_size,
+        }
+    }
+
     pub(crate) fn rw_buffer_config(&self) -> RwBufferConfig {
         RwBufferConfig {
             capacity: self.rw_buffer_capacity,
+            queue_size: self.rw_queue_size,
         }
     }
 
@@ -43,6 +56,7 @@ impl TopicConfig {
             min_shard_size: self.min_shard_size,
             row_group_size: self.min_shard_size,
             write_batch_size: self.rw_buffer_capacity,
+            queue_size: self.shard_queue_size,
         }
     }
 }
@@ -50,6 +64,7 @@ impl TopicConfig {
 #[derive(Debug, Clone)]
 pub struct RwBufferConfig {
     pub capacity: usize,
+    pub queue_size: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -58,4 +73,10 @@ pub struct ShardConfig {
     pub min_shard_size: usize,
     pub row_group_size: usize,
     pub write_batch_size: usize,
+    pub queue_size: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct StreamingConfig {
+    pub queue_size: usize,
 }
