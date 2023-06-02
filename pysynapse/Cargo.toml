@@ -8,8 +8,16 @@ name = "pysynapse"
 crate-type = ["cdylib"]
 
 [dependencies]
-synapse = { path="../synapse" }
+synapse = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+futures = { workspace = true }
+mimalloc = { workspace = true, optional = true }
+anyhow = "1.0.70"
+
 
 [dependencies.pyo3]
 version = "0.18.2"
-features = ["extension-module"]
+features = ["extension-module", "anyhow"]
+
+[features]
+default = ["mimalloc"]
