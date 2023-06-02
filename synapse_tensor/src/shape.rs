@@ -126,7 +126,15 @@ pub trait Shape:
         if strides == &defaults {
             return true;
         }
-        false
+        let shape = self.slice();
+        let mut cstride = 1;
+        for &i in strides.strides_sort_indices().slice() {
+            if shape[i] != 1 && strides[i] != cstride {
+                return false;
+            }
+            cstride *= shape[i];
+        }
+        true
     }
 
     #[doc(hidden)]
@@ -164,6 +172,17 @@ pub trait Shape:
     fn set_last_elem(&mut self, i: usize) {
         let n = self.ndim();
         self.slice_mut()[n - 1] = i;
+    }
+
+    #[doc(hidden)]
+    fn strides_sort_indices(&self) -> Self {
+        let mut indices = self.clone();
+        for (i, s) in indices.slice_mut().iter_mut().enumerate() {
+            *s = i;
+        }
+        let strides = self.slice();
+        indices.slice_mut().sort_by_key(|&i| strides[i]);
+        indices
     }
 }
 
