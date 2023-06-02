@@ -1,3 +1,4 @@
+// mod bounded_stream;
 pub mod catalog;
 mod context;
 mod path;
@@ -5,6 +6,7 @@ mod runtime;
 pub mod schema;
 pub mod topic;
 
+use catalog::TopicId;
 pub use context::SynapseContext;
 pub use path::Path;
 pub use runtime::{Runtime, RuntimeConfig};
@@ -37,6 +39,10 @@ pub enum Error {
     InvalidFilename(String),
     #[error("UUID error")]
     Uuid(#[from] uuid::Error),
+    #[error("topic {0} unavailable")]
+    TopicUnavailable(TopicId),
+    #[error("publisher queue full for topic {0}")]
+    TopicQueueFull(TopicId),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

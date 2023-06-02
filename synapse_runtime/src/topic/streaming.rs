@@ -259,6 +259,7 @@ impl StreamingTable {
     ) {
         let wait_stop = stop.notified();
         futures::pin_mut!(wait_stop);
+        let mut error_logged = false;
 
         loop {
             tokio::select! {
@@ -266,7 +267,12 @@ impl StreamingTable {
                 batch = recv.recv() => match batch {
                     Some(batch) => {
                         let _ = send.send(batch.clone());
-                        rw.insert(batch);
+                        if let Err(error) = rw.insert(batch) {
+                            if !error_logged {
+                                error_logged = true;
+                                tracing::error!(?error, "failed to write batch to R/W buffer");
+                            }
+                        }
                     },
                     None => break,
                 },

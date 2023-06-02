@@ -11,6 +11,7 @@ use datafusion::{
     prelude::Expr,
 };
 use futures::{Future, FutureExt};
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::oneshot::error::TryRecvError;
 use tokio::sync::{oneshot, Mutex, Notify};
 use tokio::{
@@ -70,10 +71,15 @@ impl RwBuffer {
         self.schema.clone()
     }
 
-    pub fn insert(&self, batch: RecordBatch) {
-        if let Err(_error) = self.input.try_send(batch) {
-            tracing::error!(topic=?self.topic, "failed to write record batch to table");
+    pub fn insert(&self, batch: RecordBatch) -> crate::Result<()> {
+        match self.input.try_send(batch) {
+            Ok(_) => Ok(()),
+            Err(TrySendError::Closed(_)) => Err(crate::Error::TopicUnavailable(self.topic.clone())),
+            Err(TrySendError::Full(_)) => Err(crate::Error::TopicQueueFull(self.topic.clone()))
         }
+        // if let Err(_error) = self.input.try_send(batch) {
+        //     tracing::error!(topic=?self.topic, "failed to write record batch to table");
+        // }
     }
 
     pub async fn close(&self) {
