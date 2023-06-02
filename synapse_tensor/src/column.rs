@@ -1,7 +1,7 @@
 use std::{fmt::Debug, sync::Arc};
 
 use arrow::{
-    array::{Array, ArrayData, ArrayRef, AsArray, FixedSizeListArray},
+    array::{make_array, Array, ArrayData, ArrayRef, AsArray, FixedSizeListArray},
     datatypes::{DataType, Field},
 };
 
@@ -161,7 +161,15 @@ pub(crate) fn column_to_array(col: &Column) -> ArrayRef {
         };
         Arc::new(FixedSizeListArray::from(data))
     } else {
-        col.data.data().clone()
+        let data = unsafe {
+            col.data
+                .data()
+                .to_data()
+                .into_builder()
+                .data_type(field.data_type().to_owned())
+                .build_unchecked()
+        };
+        make_array(data)
     }
 }
 

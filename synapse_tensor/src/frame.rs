@@ -33,14 +33,11 @@ pub(crate) fn batch_to_columns(rb: &RecordBatch) -> crate::Result<Arc<[Column]>>
 }
 
 pub(crate) fn frame_to_batch<F: Frame>(frame: &F) -> RecordBatch {
-    RecordBatch::try_new(
-        Arc::new(frame_to_schema(frame)),
-        frame
-            .columns()
-            .map(|col| column_to_array(col))
-            .collect::<Vec<_>>(),
-    )
-    .unwrap()
+    let columns = frame
+        .columns()
+        .map(|col| column_to_array(col))
+        .collect::<Vec<_>>();
+    RecordBatch::try_new(Arc::new(frame_to_schema(frame)), columns).unwrap()
 }
 
 pub(crate) fn frame_to_schema<F: Frame>(frame: &F) -> Schema {
