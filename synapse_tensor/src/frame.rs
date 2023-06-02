@@ -73,8 +73,8 @@ macro_rules! frame {
     () => {
         $crate::DataFrame::new()
     };
-    ($($name:ident=$col:expr),+ $(,)?) => {
-        [$($crate::Column::new(stringify!($name), $col)),+]
+    ($($($name:tt).+ = $col:expr),+ $(,)?) => {
+        [$($crate::Column::new(stringify!($($name).+), $col)),+]
             .into_iter()
             .collect::<$crate::DataFrame>()
     };
