@@ -226,6 +226,11 @@ impl TableProvider for ShardManager {
         .await?;
 
         let table_partition_cols = vec![];
+        let output_ordering = if let Some(order) = self.schema.output_ordering() {
+            vec![order]
+        } else {
+            Vec::new()
+        };
 
         let config = FileScanConfig {
             object_store_url: ObjectStoreUrl::parse(&self.path.store_url())?,
@@ -235,7 +240,7 @@ impl TableProvider for ShardManager {
             projection: projection.cloned(),
             limit,
             table_partition_cols,
-            output_ordering: self.schema.output_ordering(),
+            output_ordering,
             infinite_source: false,
         };
         let filters = if let Some(expr) = conjunction(filters.to_vec()) {
