@@ -6,7 +6,7 @@ use arrow::{
 };
 
 use crate::{arrow::ExtensionType, Axis, Dyn, RemoveAxis, Shape, Tensor, TensorType, TensorValue};
-use time::{Duration, OffsetDateTime};
+use synapse_time::{Duration, Time};
 
 #[derive(Debug, Clone)]
 pub struct Column {
@@ -225,5 +225,6 @@ impl_make_column!(
     [f32 Float32 Float32Type]
     [f64 Float64 Float64Type]
     [Duration Duration Int64Type]
-    [OffsetDateTime Timestamp Int64Type]
+    // [OffsetDateTime Timestamp Int64Type]
+    [Time Timestamp Int64Type]
 );

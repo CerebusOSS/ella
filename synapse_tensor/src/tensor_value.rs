@@ -4,7 +4,8 @@ use arrow::{
     datatypes::*,
 };
 use std::fmt::{Debug, Write};
-use time::{format_description::well_known::Rfc3339, Duration, OffsetDateTime};
+use synapse_time::{Duration, OffsetDateTime, Time};
+use time::format_description::well_known::Rfc3339;
 
 pub trait TensorValue: Debug + Clone + Copy + PartialEq + PartialOrd + 'static {
     type Array: Array + Clone + 'static;
@@ -415,5 +416,62 @@ impl TensorValue for OffsetDateTime {
 
     fn format(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&OffsetDateTime::format(*self, &Rfc3339).unwrap())
+    }
+}
+
+impl TensorValue for Time {
+    type Array = PrimitiveArray<Int64Type>;
+    type Masked = Option<Self>;
+    type Unmasked = Self;
+
+    const TENSOR_TYPE: TensorType = TensorType::Timestamp;
+    const NULLABLE: bool = false;
+
+    fn value(array: &Self::Array, i: usize) -> Self {
+        Time::from_timestamp(array.value(i))
+    }
+
+    unsafe fn value_unchecked(array: &Self::Array, i: usize) -> Self {
+        Time::from_timestamp(array.value_unchecked(i))
+    }
+
+    #[inline]
+    fn to_masked(value: Self) -> Self::Masked {
+        Some(value)
+    }
+
+    #[inline]
+    fn to_unmasked(value: Self) -> Self::Unmasked {
+        value
+    }
+
+    fn from_iter_masked<I>(iter: I) -> Self::Array
+    where
+        I: IntoIterator<Item = Self::Masked>,
+    {
+        PrimitiveArray::from_iter(iter.into_iter().map(|t| t.map(|t| t.timestamp())))
+    }
+
+    fn from_vec(values: Vec<Self>) -> Self::Array {
+        unsafe { Self::from_trusted_len_iter(values) }
+    }
+
+    unsafe fn from_trusted_len_iter_masked<I>(iter: I) -> Self::Array
+    where
+        I: IntoIterator<Item = Self::Masked>,
+    {
+        PrimitiveArray::from_trusted_len_iter(iter.into_iter().map(|t| t.map(|t| t.timestamp())))
+    }
+
+    fn slice(array: &Self::Array, offset: usize, length: usize) -> Self::Array {
+        array.slice(offset, length)
+    }
+
+    fn from_array_data(data: ArrayData) -> Self::Array {
+        data.into()
+    }
+
+    fn format(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        <_ as std::fmt::Display>::fmt(self, f)
     }
 }

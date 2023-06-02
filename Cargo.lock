@@ -1216,6 +1216,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7012b1bbb0719e1097c47611d3898568c546d597c2e74d66f6087edd5233ff4"
 
 [[package]]
+name = "libmimalloc-sys"
+version = "0.1.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4ac0e912c8ef1b735e92369695618dc5b1819f5a7bf3f167301a3ba1cea515e"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1303,6 +1313,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d61c719bcfbcf5d62b3a09efa6088de8c54bc0bfcd3ea7ae39fcc186108b8de1"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "mimalloc"
+version = "0.1.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e2894987a3459f3ffb755608bd82188f8ed00d0ae077f1edea29c068d639d98"
+dependencies = [
+ "libmimalloc-sys",
 ]
 
 [[package]]
@@ -1678,6 +1697,7 @@ version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3b1ac5b3731ba34fdaa9785f8d74d17448cd18f30cf19e0c7e7b1fdb5272109"
 dependencies = [
+ "anyhow",
  "cfg-if",
  "indoc",
  "libc",
@@ -1736,8 +1756,12 @@ dependencies = [
 name = "pysynapse"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "futures",
+ "mimalloc",
  "pyo3",
  "synapse",
+ "tokio",
 ]
 
 [[package]]
@@ -1869,18 +1893,6 @@ name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
-
-[[package]]
-name = "sealed"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4a8caec23b7800fb97971a1c6ae365b6239aaeddfb934d6265f8505e795699d"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "syn 2.0.18",
-]
 
 [[package]]
 name = "semver"
@@ -2098,6 +2110,7 @@ dependencies = [
  "datafusion",
  "synapse-runtime",
  "synapse-tensor",
+ "synapse-time",
  "thiserror",
  "tokio",
  "tracing",
@@ -2125,6 +2138,7 @@ dependencies = [
  "serde_json",
  "smallvec",
  "synapse-tensor",
+ "synapse-time",
  "thiserror",
  "time",
  "tokio",
@@ -2144,11 +2158,20 @@ dependencies = [
  "derive_more",
  "num-traits",
  "paste",
- "sealed",
  "serde",
  "serde_json",
  "smallvec",
+ "synapse-time",
  "thiserror",
+ "time",
+]
+
+[[package]]
+name = "synapse-time"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "serde",
  "time",
 ]
 

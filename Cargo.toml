@@ -1,8 +1,19 @@
 [workspace]
-members = ["synapse", "synapse_tensor", "synapse_runtime", "pysynapse"]
+members = [
+    "synapse",
+    "synapse_tensor",
+    "synapse_runtime",
+    "synapse_time",
+    "pysynapse",
+]
 resolver = "2"
 
 [workspace.dependencies]
+synapse-time = { path = "./synapse_time" }
+synapse-tensor = { path = "./synapse_tensor" }
+synapse-runtime = { path = "./synapse_runtime" }
+synapse = { path = "./synapse" }
+
 derive_more = "0.99.17"
 serde = { version = "1.0.160", features = ["derive"] }
 num-traits = "0.2.15"
@@ -14,7 +25,9 @@ datafusion = "25.0.0"
 arrow-schema = { version = "40.0.0", features = ["serde"] }
 parquet = "40.0.0"
 tracing = "0.1.37"
-# parquet = { git = "https://github.com/apache/arrow-rs", rev = "77aa8f5", features = ["async"] }
+tokio = { version = "1.27.0" }
+futures = "0.3.28"
+mimalloc = "0.1.37"
 
 [patch.crates-io]
 datafusion = { git = "https://github.com/apache/arrow-datafusion" }
@@ -27,4 +40,3 @@ arrow-data = { git = "https://github.com/dexterduck/arrow-rs.git", branch = "obj
 arrow-ipc = { git = "https://github.com/dexterduck/arrow-rs.git", branch = "object-store-rollback" }
 arrow-schema = { git = "https://github.com/dexterduck/arrow-rs.git", branch = "object-store-rollback" }
 arrow-select = { git = "https://github.com/dexterduck/arrow-rs.git", branch = "object-store-rollback" }
-# object_store_5_6 = { git = "https://github.com/apache/arrow-rs", version="0.5.6", package="object_store" }
