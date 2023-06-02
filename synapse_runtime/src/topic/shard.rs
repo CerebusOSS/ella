@@ -235,7 +235,7 @@ impl TableProvider for ShardManager {
             projection: projection.cloned(),
             limit,
             table_partition_cols,
-            output_ordering: None,
+            output_ordering: self.schema.output_ordering(),
             infinite_source: false,
         };
         let filters = if let Some(expr) = conjunction(filters.to_vec()) {
@@ -400,6 +400,7 @@ impl SingleShardWriter {
         let (abort, file) = ctx.store().put_multipart(&path.as_path()).await?;
 
         let props = WriterProperties::builder()
+            .set_sorting_columns(schema.sorting_columns())
             .set_max_row_group_size(cfg.row_group_size)
             .set_write_batch_size(cfg.write_batch_size)
             .build();

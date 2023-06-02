@@ -23,8 +23,6 @@ pub enum Error {
     Arrow(#[from] datafusion::arrow::error::ArrowError),
     #[error("parquet error")]
     Parquet(#[from] datafusion::parquet::errors::ParquetError),
-    #[error("failed to parse time string")]
-    TimeParse(#[from] time::error::Parse),
     #[error("invalid url")]
     Url(#[from] url::ParseError),
     #[error("object store error")]
@@ -39,8 +37,6 @@ pub enum Error {
     InvalidFilename(String),
     #[error("UUID error")]
     Uuid(#[from] uuid::Error),
-    // #[error("failed to parse UUID from {0}")]
-    // InvalidUuid(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -8,7 +8,7 @@ use crate::{
     Schema, SynapseContext,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RuntimeConfig {
     default_topic_config: TopicConfig,
     topic_config_overrides: HashMap<TopicId, TopicConfig>,

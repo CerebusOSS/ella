@@ -162,12 +162,22 @@ impl TableProvider for RwBuffer {
     ) -> DfResult<Arc<dyn ExecutionPlan>> {
         let batches = self.buffer.read().await.items().clone();
         let pending = self.pending.values();
-        Ok(Arc::new(MemoryExec::try_new(
+        let mut table = MemoryExec::try_new(
             &[batches, pending],
             self.schema().arrow_schema().clone(),
             projection.cloned(),
-        )?))
+        )?;
+        if let Some(sort) = self.schema.output_ordering() {
+            table = table.with_sort_information(sort);
+        }
+        Ok(Arc::new(table))
     }
+
+    // fn statistics(&self) -> Option<Statistics> {
+    //     Some(Statistics {
+
+    //     })
+    // }
 }
 
 #[derive(Debug)]

@@ -44,7 +44,6 @@ impl Topic {
         let path = state.path.clone();
         let schema = Arc::new(state.schema.clone());
         let config = ctx.config().topic_config(id.clone()).clone();
-        // let schema = Arc::new(schema);
         let shards = Arc::new(ShardManager::new(
             ctx.clone(),
             schema.clone(),

@@ -15,7 +15,8 @@ use datafusion::{
     logical_expr::TableType,
     physical_expr::PhysicalSortExpr,
     physical_plan::{
-        project_schema, stream::RecordBatchStreamAdapter, ExecutionPlan, Partitioning, Statistics,
+        project_schema, stream::RecordBatchStreamAdapter, ColumnStatistics, ExecutionPlan,
+        Partitioning, Statistics,
     },
     prelude::Expr,
 };
@@ -135,6 +136,7 @@ impl Clone for RwSubInner {
 #[derive(Debug)]
 pub struct RwPub {
     inner: mpsc::Sender<RecordBatch>,
+    schema: Arc<Schema>,
     stop: Arc<Notify>,
     active: Arc<AtomicUsize>,
 }
@@ -144,6 +146,7 @@ impl Clone for RwPub {
         self.active.fetch_add(1, Ordering::Release);
         Self {
             inner: self.inner.clone(),
+            schema: self.schema.clone(),
             stop: self.stop.clone(),
             active: self.active.clone(),
         }
@@ -163,7 +166,10 @@ impl RwPub {
     where
         R: Into<RecordBatch>,
     {
-        match self.inner.try_send(batch.into()) {
+        let batch: RecordBatch = batch.into();
+        let batch = batch.with_schema(self.schema.arrow_schema().clone())?;
+
+        match self.inner.try_send(batch) {
             Ok(_) => Ok(()),
             Err(TrySendError::Closed(_)) => {
                 Err(DataFusionError::Execution("table unavailable".to_string()))
@@ -196,6 +202,7 @@ impl StreamingTable {
         let active = Arc::new(AtomicUsize::new(0));
         let publish = RwPub {
             inner: pub_send,
+            schema: schema.clone(),
             stop: stop.clone(),
             active: active.clone(),
         };
@@ -299,7 +306,7 @@ impl TableProvider for StreamingTable {
         // )?;
         Ok(Arc::new(TableExec::try_new(
             self.subscribe_inner(true),
-            self.schema.arrow_schema().clone(),
+            self.schema.clone(),
             projection.cloned(),
         )?))
     }
@@ -308,7 +315,7 @@ impl TableProvider for StreamingTable {
 #[derive(Debug)]
 struct TableExec {
     src: RwSubInner,
-    schema: Arc<ArrowSchema>,
+    schema: Arc<Schema>,
     projected_schema: Arc<ArrowSchema>,
     projection: Option<Vec<usize>>,
     order: Option<Vec<PhysicalSortExpr>>,
@@ -317,23 +324,17 @@ struct TableExec {
 impl TableExec {
     fn try_new(
         src: RwSubInner,
-        schema: Arc<ArrowSchema>,
+        schema: Arc<Schema>,
         projection: Option<Vec<usize>>,
     ) -> Result<Self> {
-        let projected_schema = project_schema(&schema, projection.as_ref())?;
-        // let order = vec![PhysicalSortExpr {
-        //     expr: Arc::new(Column::new("time", 0)),
-        //     options: SortOptions {
-        //         descending: false,
-        //         nulls_first: true,
-        //     },
-        // }];
+        let projected_schema = project_schema(schema.arrow_schema(), projection.as_ref())?;
+        let order = schema.output_ordering();
         Ok(Self {
             src,
             schema,
             projected_schema,
             projection,
-            order: None,
+            order,
         })
     }
 }
@@ -356,7 +357,7 @@ impl ExecutionPlan for TableExec {
     }
 
     fn unbounded_output(&self, _children: &[bool]) -> Result<bool> {
-        Ok(!self.src.stop_on_inactive)
+        Ok(true)
     }
 
     fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
@@ -365,9 +366,9 @@ impl ExecutionPlan for TableExec {
 
     fn with_new_children(
         self: Arc<Self>,
-        children: Vec<Arc<dyn ExecutionPlan>>,
+        _children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        todo!()
+        unimplemented!()
     }
 
     fn execute(
