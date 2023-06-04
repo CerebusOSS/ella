@@ -122,7 +122,7 @@ impl RwBuffer {
                 }
             });
             match res {
-                Ok(_) => tracing::info!(%topic, rows, "compacting r/w buffer"),
+                Ok(_) => tracing::debug!(%topic, rows, "compacting r/w buffer"),
                 Err(error) => tracing::error!(?error, rows, "failed to compact r/w buffer"),
             }
         };
@@ -133,7 +133,7 @@ impl RwBuffer {
             let shards = shards.clone();
             let res = writing_in.process(|values| shards.write(values).map(|_| {}));
             match res {
-                Ok(_) => tracing::info!(%topic, rows, "writing compacted buffer"),
+                Ok(_) => tracing::debug!(%topic, rows, "writing compacted buffer"),
                 Err(error) => tracing::error!(?error, rows, "failed to write compacted buffer"),
             }
         };
