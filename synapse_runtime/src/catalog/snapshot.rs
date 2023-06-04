@@ -44,7 +44,7 @@ impl Snapshot {
             return Ok(());
         }
 
-        tracing::debug!(transaction=?t, "committing transaction");
+        tracing::debug!(uuid=%t.uuid(), kind=t.kind(), "committing transaction");
         self.last_transaction = Some(t.uuid());
         match t {
             CreateTopic(t) => self.create_topic(t),

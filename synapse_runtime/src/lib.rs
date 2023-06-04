@@ -5,8 +5,8 @@ mod path;
 mod runtime;
 pub mod schema;
 pub mod topic;
+mod work_queue;
 
-use catalog::TopicId;
 pub use context::SynapseContext;
 pub use path::Path;
 pub use runtime::{Runtime, RuntimeConfig};
@@ -39,10 +39,12 @@ pub enum Error {
     InvalidFilename(String),
     #[error("UUID error")]
     Uuid(#[from] uuid::Error),
-    #[error("topic {0} unavailable")]
-    TopicUnavailable(TopicId),
-    #[error("publisher queue full for topic {0}")]
-    TopicQueueFull(TopicId),
+    #[error("table closed")]
+    TableClosed,
+    #[error("table queue full")]
+    TableQueueFull,
+    #[error("worker panicked: {0}")]
+    WorkerPanic(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

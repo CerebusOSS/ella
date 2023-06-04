@@ -88,7 +88,6 @@ impl TransactionLog {
         for file in file_list {
             let raw = self.store.get(&file.location).await?.bytes().await?;
             let t = serde_json::from_slice(&raw)?;
-            tracing::debug!(transaction=?t, "loaded transaction");
             transactions.push(t);
         }
 

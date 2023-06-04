@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex as SyncMutex, MutexGuard};
-use std::task::Poll;
+use std::fmt::Debug;
+use std::sync::Arc;
 
 use datafusion::error::Result as DfResult;
 use datafusion::{
@@ -10,18 +10,15 @@ use datafusion::{
     physical_plan::{memory::MemoryExec, ExecutionPlan},
     prelude::Expr,
 };
-use futures::{Future, FutureExt};
+use futures::FutureExt;
 use tokio::sync::mpsc::error::TrySendError;
-use tokio::sync::oneshot::error::TryRecvError;
-use tokio::sync::{oneshot, Mutex, Notify};
-use tokio::{
-    sync::{mpsc, RwLock},
-    task::JoinHandle,
-};
+use tokio::sync::{Mutex, Notify};
+use tokio::{sync::mpsc, task::JoinHandle};
 
 use super::config::RwBufferConfig;
 use super::ShardManager;
 use crate::catalog::TopicId;
+use crate::work_queue::{work_queue, WorkQueueIn, WorkQueueOut};
 use crate::Schema;
 
 #[derive(Debug)]
@@ -30,8 +27,8 @@ pub struct RwBuffer {
     config: RwBufferConfig,
     schema: Arc<Schema>,
     input: mpsc::Sender<RecordBatch>,
-    buffer: Arc<RwLock<BatchWriteBuffer>>,
-    pending: Arc<PendingQueue>,
+    compacting: Arc<WorkQueueIn<RecordBatch>>,
+    writing: Arc<WorkQueueIn<()>>,
     handle: Mutex<Option<JoinHandle<()>>>,
     stop: Arc<Notify>,
 }
@@ -39,19 +36,24 @@ pub struct RwBuffer {
 impl RwBuffer {
     pub fn new(topic: TopicId, shards: Arc<ShardManager>, config: RwBufferConfig) -> Self {
         let schema = shards.schema();
-        let buffer = Arc::new(RwLock::new(BatchWriteBuffer::new(&schema)));
         let (input, recv) = mpsc::channel(config.queue_size);
-        let pending = Arc::new(PendingQueue::new());
+        let (compacting, compacting_out) = work_queue(config.queue_size);
+        let (writing, writing_out) = work_queue(config.queue_size);
+        let compacting = Arc::new(compacting);
+        let writing = Arc::new(writing);
         let stop = Arc::new(Notify::new());
 
         let handle = tokio::spawn(Self::run(
             topic.clone(),
-            buffer.clone(),
             recv,
-            pending.clone(),
+            compacting.clone(),
+            compacting_out,
+            writing.clone(),
+            writing_out,
             shards,
             stop.clone(),
             config.clone(),
+            schema.clone(),
         ));
         let handle = Mutex::new(Some(handle));
 
@@ -59,9 +61,9 @@ impl RwBuffer {
             topic,
             input,
             schema,
-            buffer,
             handle,
-            pending,
+            compacting,
+            writing,
             stop,
             config,
         }
@@ -74,12 +76,9 @@ impl RwBuffer {
     pub fn insert(&self, batch: RecordBatch) -> crate::Result<()> {
         match self.input.try_send(batch) {
             Ok(_) => Ok(()),
-            Err(TrySendError::Closed(_)) => Err(crate::Error::TopicUnavailable(self.topic.clone())),
-            Err(TrySendError::Full(_)) => Err(crate::Error::TopicQueueFull(self.topic.clone())),
+            Err(TrySendError::Closed(_)) => Err(crate::Error::TableClosed),
+            Err(TrySendError::Full(_)) => Err(crate::Error::TableQueueFull),
         }
-        // if let Err(_error) = self.input.try_send(batch) {
-        //     tracing::error!(topic=?self.topic, "failed to write record batch to table");
-        // }
     }
 
     pub async fn close(&self) {
@@ -96,50 +95,93 @@ impl RwBuffer {
 
     async fn run(
         topic: TopicId,
-        buffer: Arc<RwLock<BatchWriteBuffer>>,
         mut recv: mpsc::Receiver<RecordBatch>,
-        pending: Arc<PendingQueue>,
+        compacting_in: Arc<WorkQueueIn<RecordBatch>>,
+        mut compacting_out: WorkQueueOut<RecordBatch>,
+        writing_in: Arc<WorkQueueIn<()>>,
+        mut writing_out: WorkQueueOut<()>,
         shards: Arc<ShardManager>,
         stop: Arc<Notify>,
         config: RwBufferConfig,
+        schema: Arc<Schema>,
     ) {
         let wait_stop = stop.notified();
         futures::pin_mut!(wait_stop);
 
-        let compact_buffer = |buf: &mut BatchWriteBuffer| {
-            tracing::debug!(topic=%topic, rows=buf.len(), "compacting R/W buffer");
-            let compacted = buf.compact().unwrap();
-            let done = shards.write(compacted.clone());
-            pending.push(compacted, done);
+        let compact_buffer = |rows: usize| {
+            let arrow_schema = schema.arrow_schema().clone();
+            let res = compacting_in.process(|mut values| async move {
+                if values.len() == 1 {
+                    return values.pop().unwrap();
+                } else {
+                    tokio::task::spawn_blocking(move || {
+                        compute::concat_batches(&arrow_schema, &values).unwrap()
+                    })
+                    .await
+                    .unwrap()
+                }
+            });
+            match res {
+                Ok(_) => tracing::info!(%topic, rows, "compacting r/w buffer"),
+                Err(error) => tracing::error!(?error, rows, "failed to compact r/w buffer"),
+            }
         };
 
+        let write_batch = |batch: RecordBatch| {
+            let rows = batch.num_rows();
+            writing_in.push(batch);
+            let shards = shards.clone();
+            let res = writing_in.process(|values| shards.write(values).map(|_| {}));
+            match res {
+                Ok(_) => tracing::info!(%topic, rows, "writing compacted buffer"),
+                Err(error) => tracing::error!(?error, rows, "failed to write compacted buffer"),
+            }
+        };
+
+        let mut len = 0;
         loop {
             tokio::select! {
                 biased;
                 batch = recv.recv() => match batch {
                     Some(batch) => {
-                        let mut buf = buffer.write().await;
-                        buf.write(batch);
-
-                        if buf.len() >= config.capacity {
-                            compact_buffer(&mut buf);
+                        len += batch.num_rows();
+                        compacting_in.push(batch);
+                        if len >= config.write_batch_size {
+                            compact_buffer(len);
+                            len = 0;
                         }
                     },
-                    None => break,
+                    // Finish compacting any remaining rows and send the compacted batches to the write queue.
+                    None => {
+                        if len > 0 {
+                            compact_buffer(len);
+                        }
+                        compacting_out.close();
+                        while let Some(batch) = compacting_out.ready().await {
+                            write_batch(batch);
+                        }
+                        break
+                    },
                 },
-                _ = &mut wait_stop => break,
+                // Take compacted batches from the compacting queue and push them to th write queue.
+                compacted = compacting_out.ready() => match compacted {
+                    Some(batch) => {
+                        write_batch(batch);
+                    },
+                    None => unreachable!(),
+                },
+                Some(_) = writing_out.ready() => {},
+                _ = &mut wait_stop => {
+                    recv.close();
+                },
             }
         }
         tracing::debug!(topic=%topic, "shutting down R/W buffer worker");
 
-        // Push any rows in the buffer to the write queue
-        let mut buf = buffer.write().await;
-        if buf.len() > 0 {
-            compact_buffer(&mut buf);
-        }
+        // Close the write queue.
+        // We don't need to wait for the queue to finish since that will be handled by the shard writer.
+        writing_out.close();
 
-        // We don't need to wait for write jobs to finish since we're only tracking them
-        // to make sure we hold onto data until it's persisted to disk
         tracing::debug!(topic=%topic, "R/W buffer worker shutdown");
     }
 }
@@ -166,10 +208,15 @@ impl TableProvider for RwBuffer {
         _filters: &[Expr],
         _limit: Option<usize>,
     ) -> DfResult<Arc<dyn ExecutionPlan>> {
-        let batches = self.buffer.read().await.items().clone();
-        let pending = self.pending.values();
+        // let batches = self.buffer.read().await.items().clone();
+        let compacting = self.compacting.values();
+        let writing = self.writing.values();
+        // let pending = self.pending.values();
+        // let pending = self.pending.lock().unwrap().values().unwrap();
+        // let pending = self.pending.values();
         let mut table = MemoryExec::try_new(
-            &[batches, pending],
+            // &[batches, pending],
+            &[compacting, writing],
             self.schema().arrow_schema().clone(),
             projection.cloned(),
         )?;
@@ -184,100 +231,4 @@ impl TableProvider for RwBuffer {
 
     //     })
     // }
-}
-
-#[derive(Debug)]
-pub struct BatchWriteBuffer {
-    arrow_schema: SchemaRef,
-    items: Vec<RecordBatch>,
-    len: usize,
-}
-
-impl BatchWriteBuffer {
-    pub fn new(schema: &Schema) -> Self {
-        let arrow_schema = schema.arrow_schema().clone();
-        Self {
-            arrow_schema,
-            items: Vec::new(),
-            len: 0,
-        }
-    }
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    pub fn items(&self) -> &Vec<RecordBatch> {
-        &self.items
-    }
-
-    pub fn write(&mut self, batch: RecordBatch) {
-        self.len += batch.num_rows();
-        self.items.push(batch);
-    }
-
-    pub fn compact(&mut self) -> crate::Result<RecordBatch> {
-        let compacted = compute::concat_batches(&self.arrow_schema, self.items.iter())?;
-        self.len = 0;
-        self.items.clear();
-        Ok(compacted)
-    }
-}
-
-#[derive(Debug)]
-pub struct PendingJob {
-    batch: RecordBatch,
-    done: oneshot::Receiver<()>,
-}
-
-impl PendingJob {
-    pub fn ready(&mut self) -> bool {
-        match self.done.try_recv() {
-            Ok(_) | Err(TryRecvError::Closed) => true,
-            Err(TryRecvError::Empty) => false,
-        }
-    }
-}
-
-impl Future for PendingJob {
-    type Output = ();
-
-    fn poll(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        let _ = futures::ready!(self.done.poll_unpin(cx));
-        Poll::Ready(())
-    }
-}
-
-#[derive(Debug)]
-pub struct PendingQueue {
-    values: SyncMutex<Vec<PendingJob>>,
-}
-
-impl PendingQueue {
-    pub fn new() -> Self {
-        let values = SyncMutex::new(Vec::new());
-        Self { values }
-    }
-
-    pub fn values(&self) -> Vec<RecordBatch> {
-        let mut values = self.values.lock().unwrap();
-        Self::prune(&mut values);
-        values
-            .iter()
-            .map(|job| job.batch.clone())
-            .collect::<Vec<_>>()
-    }
-
-    pub fn push(&self, batch: RecordBatch, done: oneshot::Receiver<()>) {
-        let job = PendingJob { batch, done };
-        let mut values = self.values.lock().unwrap();
-        Self::prune(&mut values);
-        values.push(job);
-    }
-
-    fn prune(values: &mut MutexGuard<'_, Vec<PendingJob>>) {
-        values.retain_mut(|job| !job.ready());
-    }
 }

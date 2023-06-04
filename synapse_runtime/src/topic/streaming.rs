@@ -206,7 +206,13 @@ impl StreamingTable {
             stop: stop.clone(),
             active: active.clone(),
         };
-        let handle = tokio::spawn(Self::run(pub_recv, subscribe.clone(), rw, stop.clone()));
+        let handle = tokio::spawn(Self::run(
+            topic.clone(),
+            pub_recv,
+            subscribe.clone(),
+            rw,
+            stop.clone(),
+        ));
         let handle = Mutex::new(Some(handle));
         Self {
             topic,
@@ -252,6 +258,7 @@ impl StreamingTable {
     }
 
     async fn run(
+        topic: TopicId,
         mut recv: mpsc::Receiver<RecordBatch>,
         send: Arc<broadcast::Sender<RecordBatch>>,
         rw: Arc<RwBuffer>,
@@ -270,7 +277,7 @@ impl StreamingTable {
                         if let Err(error) = rw.insert(batch) {
                             if !error_logged {
                                 error_logged = true;
-                                tracing::error!(?error, "failed to write batch to R/W buffer");
+                                tracing::error!(topic=%topic, ?error, "failed to write to r/w buffer");
                             }
                         }
                     },

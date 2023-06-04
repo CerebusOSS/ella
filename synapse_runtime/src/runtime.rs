@@ -85,6 +85,10 @@ impl Runtime {
         }
     }
 
+    pub fn topics(&self) -> Vec<Arc<Topic>> {
+        self.catalog.topics()
+    }
+
     pub async fn publish(&self, topic: &str, schema: Schema) -> crate::Result<Arc<Topic>> {
         if let Some(topic) = self.catalog.topic(topic) {
             Ok(topic)

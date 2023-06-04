@@ -26,6 +26,7 @@ tracing = "0.1.37"
 tracing-subscriber = "0.3.17"
 object_store = "0.5"
 url = { version = "2.3.1", features = ["serde"] }
+strum = "0.24.1"
 
 [dev-dependencies]
 anyhow = "1.0.70"

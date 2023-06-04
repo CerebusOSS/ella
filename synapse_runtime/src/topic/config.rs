@@ -1,5 +1,6 @@
 #[derive(Debug, Clone)]
 pub struct TopicConfig {
+    pub write_batch_size: usize,
     pub rw_buffer_capacity: usize,
     pub target_shard_size: usize,
     pub min_shard_size: usize,
@@ -11,9 +12,10 @@ pub struct TopicConfig {
 impl Default for TopicConfig {
     fn default() -> Self {
         Self {
-            rw_buffer_capacity: 128 * 1024,        // ~128K rows
-            min_shard_size: 1024 * 1024,           // ~1M rows
-            target_shard_size: 1024 * 1024 * 1024, // ~1B rows
+            write_batch_size: 1024,
+            rw_buffer_capacity: 1024 * 1024,
+            min_shard_size: 1024 * 1024,
+            target_shard_size: 1024 * 1024 * 1024,
             streaming_queue_size: 1024,
             rw_queue_size: 1024,
             shard_queue_size: 128,
@@ -22,6 +24,11 @@ impl Default for TopicConfig {
 }
 
 impl TopicConfig {
+    pub fn with_write_batch_size(mut self, size: usize) -> Self {
+        self.write_batch_size = size;
+        self
+    }
+
     pub fn with_min_shard_size(mut self, size: usize) -> Self {
         self.min_shard_size = size;
         self
@@ -37,6 +44,21 @@ impl TopicConfig {
         self
     }
 
+    pub fn with_streaming_queue_size(mut self, size: usize) -> Self {
+        self.streaming_queue_size = size;
+        self
+    }
+
+    pub fn with_rw_queue_size(mut self, size: usize) -> Self {
+        self.rw_queue_size = size;
+        self
+    }
+
+    pub fn with_shard_queue_size(mut self, size: usize) -> Self {
+        self.shard_queue_size = size;
+        self
+    }
+
     pub(crate) fn streaming_config(&self) -> StreamingConfig {
         StreamingConfig {
             queue_size: self.streaming_queue_size,
@@ -47,6 +69,7 @@ impl TopicConfig {
         RwBufferConfig {
             capacity: self.rw_buffer_capacity,
             queue_size: self.rw_queue_size,
+            write_batch_size: self.write_batch_size,
         }
     }
 
@@ -55,7 +78,7 @@ impl TopicConfig {
             target_shard_size: self.target_shard_size,
             min_shard_size: self.min_shard_size,
             row_group_size: self.min_shard_size,
-            write_batch_size: self.rw_buffer_capacity,
+            write_batch_size: self.write_batch_size,
             queue_size: self.shard_queue_size,
         }
     }
@@ -65,6 +88,7 @@ impl TopicConfig {
 pub struct RwBufferConfig {
     pub capacity: usize,
     pub queue_size: usize,
+    pub write_batch_size: usize,
 }
 
 #[derive(Debug, Clone)]

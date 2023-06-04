@@ -162,7 +162,7 @@ impl ShardManager {
         self.schema.clone()
     }
 
-    pub fn write(&self, values: RecordBatch) -> oneshot::Receiver<()> {
+    pub fn write(&self, values: Vec<RecordBatch>) -> oneshot::Receiver<()> {
         let (done, out) = oneshot::channel();
         let job = WriteJob { done, values };
         if let Err(_error) = self.input.try_send(job) {
@@ -286,7 +286,9 @@ impl ShardWriterWorker {
                 biased;
                 job = self.recv.recv() => {
                     if let Some(job) = job {
-                        len += job.values.num_rows();
+                        for batch in &job.values {
+                            len += batch.num_rows();
+                        }
                         let handle = if let Some(handle) = &mut active {
                             handle
                         } else {
@@ -336,7 +338,7 @@ impl ShardWriterWorker {
 
 #[derive(Debug)]
 pub struct WriteJob {
-    values: RecordBatch,
+    values: Vec<RecordBatch>,
     done: oneshot::Sender<()>,
 }
 
@@ -369,7 +371,10 @@ impl JobHandle {
     ) -> crate::Result<()> {
         let mut pending = Vec::new();
         while let Some(job) = jobs.recv().await {
-            shard.write(&job.values).await?;
+            for batch in job.values {
+                shard.write(&batch).await?;
+            }
+            // shard.write(&job.values).await?;
             pending.push(job.done);
         }
         shard.close().await?;

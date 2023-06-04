@@ -101,7 +101,17 @@ impl DeleteShard {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, derive_more::From)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    derive_more::From,
+    strum::Display,
+)]
+#[strum(serialize_all = "snake_case")]
 pub enum Transaction {
     CreateTopic(CreateTopic),
     // CreatePartition(CreatePartition),
@@ -119,5 +129,9 @@ impl Transaction {
             CloseShard(t) => t.uuid,
             DeleteShard(t) => t.uuid,
         }
+    }
+
+    pub fn kind(&self) -> String {
+        self.to_string()
     }
 }
