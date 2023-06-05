@@ -1,7 +1,12 @@
+mod runtime;
+mod schema;
+mod topic;
+
 use futures::Future;
 use pyo3::prelude::*;
 
-use synapse::{Runtime, RuntimeConfig};
+pub use runtime::{PyRuntime, PyRuntimeConfig};
+pub use topic::PyTopic;
 
 #[cfg(feature = "mimalloc")]
 #[global_allocator]
@@ -16,36 +21,6 @@ fn pysynapse(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     )?;
     m.add_class::<PyRuntime>()?;
     Ok(())
-}
-
-#[derive(Debug, Clone)]
-#[pyclass(name = "RuntimeConfig")]
-pub(crate) struct PyRuntimeConfig {
-    pub(crate) cfg: RuntimeConfig,
-}
-
-#[pyclass(name = "Runtime")]
-pub(crate) struct PyRuntime {
-    pub(crate) rt: Runtime,
-}
-
-#[pymethods]
-impl PyRuntime {
-    #[pyo3(signature = (root, config=None))]
-    #[new]
-    fn new(py: Python, root: String, config: Option<PyRuntimeConfig>) -> anyhow::Result<Self> {
-        let config = if let Some(c) = config {
-            c.cfg
-        } else {
-            RuntimeConfig::default()
-        };
-        let rt = wait_for_future(py, Runtime::start_with_config(root, config))?;
-        Ok(Self { rt })
-    }
-
-    fn shutdown(&self, py: Python) -> anyhow::Result<()> {
-        Ok(wait_for_future(py, self.rt.shutdown())?)
-    }
 }
 
 #[pyclass]
