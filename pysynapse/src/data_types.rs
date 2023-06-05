@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use arrow::pyarrow::PyArrowConvert;
 use pyo3::prelude::*;
 use synapse::{
     runtime::Schema,
@@ -128,20 +131,21 @@ fn field(
 pub struct PySchema {
     #[pyo3(get)]
     fields: Vec<PyField>,
+    inner: Arc<Schema>,
+}
+
+impl From<PySchema> for Schema {
+    fn from(value: PySchema) -> Self {
+        (*value.inner).clone()
+    }
 }
 
 #[pymethods]
 impl PySchema {
     #[new]
-    fn new(fields: Vec<PyField>) -> Self {
-        Self { fields }
-    }
-}
-
-impl PySchema {
-    pub fn to_schema(&self) -> crate::Result<Schema> {
+    fn new(fields: Vec<PyField>) -> crate::Result<Self> {
         let mut builder = Schema::builder();
-        for f in &self.fields {
+        for f in &fields {
             let mut field = builder
                 .field(&f.name)
                 .data_type(f.dtype.clone())
@@ -162,11 +166,17 @@ impl PySchema {
             }
             field.finish();
         }
-        Ok(builder.build())
+        let inner = Arc::new(builder.build());
+        Ok(Self { fields, inner })
+    }
+
+    #[getter]
+    fn arrow_schema(&self, py: Python) -> PyResult<PyObject> {
+        self.inner.arrow_schema().to_pyarrow(py)
     }
 }
 
 #[pyfunction]
-fn schema(fields: Vec<PyField>) -> PySchema {
+fn schema(fields: Vec<PyField>) -> crate::Result<PySchema> {
     PySchema::new(fields)
 }

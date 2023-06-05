@@ -37,7 +37,7 @@ impl PyRuntime {
     #[pyo3(signature = (name, schema=None))]
     fn topic(&self, py: Python, name: String, schema: Option<PySchema>) -> crate::Result<PyTopic> {
         let topic = if let Some(schema) = schema {
-            wait_for_future(py, self.rt.topic(name).get_or_create(schema.to_schema()?))?
+            wait_for_future(py, self.rt.topic(name).get_or_create(schema.into()))?
         } else {
             self.rt
                 .topic(&name)
