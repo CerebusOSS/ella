@@ -9,6 +9,7 @@ use pyo3::{
 };
 
 pub use runtime::{PyRuntime, PyRuntimeConfig};
+pub use synapse;
 pub use topic::{PyPublisher, PyTopic};
 
 #[cfg(feature = "mimalloc")]
