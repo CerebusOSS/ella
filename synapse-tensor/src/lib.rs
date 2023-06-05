@@ -4,6 +4,8 @@ mod fmt;
 mod frame;
 pub mod mask;
 mod ops;
+#[cfg(feature = "pyo3")]
+mod py;
 pub mod shape;
 pub mod slice;
 mod tensor;

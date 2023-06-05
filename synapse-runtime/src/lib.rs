@@ -2,6 +2,8 @@
 pub mod catalog;
 mod context;
 mod path;
+#[cfg(feature = "pyo3")]
+mod py;
 mod runtime;
 pub mod schema;
 pub mod topic;

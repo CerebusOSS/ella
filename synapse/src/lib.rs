@@ -1,3 +1,6 @@
+#[cfg(feature = "pyo3")]
+mod py;
+
 #[cfg(feature = "runtime")]
 pub use synapse_runtime as runtime;
 pub use synapse_tensor as tensor;

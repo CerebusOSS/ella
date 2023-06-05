@@ -15,6 +15,7 @@ futures = { workspace = true }
 derive_more = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
+pyo3 = { workspace = true, optional = true }
 
 async-trait = "0.1.62"
 num-traits = "0.2.15"
@@ -30,3 +31,6 @@ strum = "0.24.1"
 
 [dev-dependencies]
 anyhow = "1.0.70"
+
+[features]
+pyo3 = ["dep:pyo3", "synapse-tensor/pyo3", "datafusion/pyarrow"]

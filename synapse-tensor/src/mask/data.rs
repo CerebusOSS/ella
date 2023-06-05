@@ -14,12 +14,6 @@ pub struct MaskData<'a> {
     len: usize,
 }
 
-// #[derive(Debug, Clone)]
-// pub struct MaskData {
-//     values: Option<NullBuffer>,
-//     len: usize,
-// }
-
 impl From<NullBuffer> for MaskData<'static> {
     fn from(value: NullBuffer) -> Self {
         let len = value.len();
