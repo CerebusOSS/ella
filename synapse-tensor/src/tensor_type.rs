@@ -2,7 +2,20 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, TimeUnit};
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    strum::Display,
+    strum::EnumString,
+    strum::FromRepr,
+)]
+#[repr(u8)]
+#[strum(serialize_all = "snake_case")]
 pub enum TensorType {
     Bool,
     Int8,

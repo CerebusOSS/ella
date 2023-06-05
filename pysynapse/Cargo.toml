@@ -8,13 +8,17 @@ name = "pysynapse"
 crate-type = ["cdylib"]
 
 [dependencies]
+pyo3 = { workspace = true, features = ["extension-module"] }
 synapse = { workspace = true, features = ["pyo3"] }
+
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 futures = { workspace = true }
 derive_more = { workspace = true }
-mimalloc = { workspace = true, optional = true }
-pyo3 = { workspace = true, features = ["extension-module"] }
+arrow = { workspace = true, features = ["pyarrow"] }
+paste = { workspace = true }
+thiserror = { workspace = true }
 
+mimalloc = { workspace = true, optional = true }
 
 [features]
 default = ["mimalloc"]

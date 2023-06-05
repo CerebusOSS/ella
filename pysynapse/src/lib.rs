@@ -1,12 +1,15 @@
+mod data_types;
 mod runtime;
-mod schema;
 mod topic;
 
 use futures::Future;
-use pyo3::prelude::*;
+use pyo3::{
+    exceptions::{PyLookupError, PyValueError},
+    prelude::*,
+};
 
 pub use runtime::{PyRuntime, PyRuntimeConfig};
-pub use topic::PyTopic;
+pub use topic::{PyPublisher, PyTopic};
 
 #[cfg(feature = "mimalloc")]
 #[global_allocator]
@@ -14,13 +17,46 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[pymodule]
 #[pyo3(name = "_internal")]
-fn pysynapse(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn pysynapse(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add(
-        "runtime",
+        "_runtime",
         TokioRuntime(tokio::runtime::Runtime::new().unwrap()),
     )?;
     m.add_class::<PyRuntime>()?;
+    m.add_class::<PyRuntimeConfig>()?;
+    m.add_class::<PyTopic>()?;
+    m.add_class::<PyPublisher>()?;
+
+    m.add_function(wrap_pyfunction!(runtime::runtime, m)?)?;
+
+    data_types::add_module(py, m)?;
     Ok(())
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("synapse runtime error")]
+    Runtime(#[from] synapse::runtime::Error),
+    #[error("synapse tensor error")]
+    Tensor(#[from] synapse::tensor::Error),
+    #[error("no topic with id '{0}' (to create the topic pass a schema)")]
+    TopicNotFound(String),
+    #[error("expected one of 'ascending' or 'descending' for index, got '{0}'")]
+    InvalidIndexMode(String),
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<Error> for PyErr {
+    fn from(err: Error) -> Self {
+        use Error::*;
+        match err {
+            Runtime(err) => err.into(),
+            Tensor(err) => err.into(),
+            TopicNotFound(err) => PyLookupError::new_err(err),
+            InvalidIndexMode(err) => PyValueError::new_err(err),
+        }
+    }
 }
 
 #[pyclass]
@@ -29,7 +65,7 @@ pub struct TokioRuntime(tokio::runtime::Runtime);
 pub(crate) fn get_tokio_runtime(py: Python) -> PyRef<TokioRuntime> {
     py.import("synapse._internal")
         .unwrap()
-        .getattr("runtime")
+        .getattr("_runtime")
         .unwrap()
         .extract()
         .unwrap()
