@@ -18,6 +18,7 @@ synapse-time = { path = "./synapse-time" }
 synapse-tensor = { path = "./synapse-tensor" }
 synapse-runtime = { path = "./synapse-runtime" }
 synapse = { path = "./synapse" }
+pysynapse = { path = "./pysynapse" }
 
 derive_more = "0.99.17"
 serde = { version = "1.0.160", features = ["derive"] }

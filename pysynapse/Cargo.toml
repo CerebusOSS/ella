@@ -6,7 +6,7 @@ authors.workspace = true
 
 [lib]
 name = "pysynapse"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 pyo3 = { workspace = true, features = ["extension-module"] }
