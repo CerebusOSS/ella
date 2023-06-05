@@ -1,7 +1,8 @@
 [package]
 name = "synapse-tensor"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
 
 [dependencies]
 synapse-time = { workspace = true }

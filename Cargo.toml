@@ -8,6 +8,11 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Dexter Duckworth <dexterduck@users.noreply.github.com>"]
+
 [workspace.dependencies]
 synapse-time = { path = "./synapse-time" }
 synapse-tensor = { path = "./synapse-tensor" }
