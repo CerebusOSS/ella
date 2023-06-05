@@ -5,6 +5,9 @@ __all__ = [
     "data_types",
 ]
 
+from maturin import import_hook as __import_hook
+__import_hook.install()
+
 def __add_submodule(path, src):
     import sys
     sys.modules[path] = src
