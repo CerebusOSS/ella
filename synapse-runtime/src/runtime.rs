@@ -47,6 +47,7 @@ impl RuntimeConfig {
     }
 }
 
+#[derive(Debug)]
 pub struct Runtime {
     ctx: Arc<SynapseContext>,
     catalog: Arc<Catalog>,
