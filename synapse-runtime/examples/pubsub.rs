@@ -42,14 +42,14 @@ async fn main() -> anyhow::Result<()> {
             x = Tensor::linspace(i as f32, (i + 1) as f32, 5).unsqueeze(0),
             y = Tensor::linspace(i as f32, (i - 1) as f32, 2).reshape((1, 2)),
         );
-        pb.insert(data)?;
+        pb.try_write(data)?;
     }
     drop(pb);
 
     let df = rt.query("select * from point").await?;
     let mut sub = df.execute_stream().await?;
     while let Some(batch) = sub.try_next().await? {
-        // println!("{:?}", batch);
+        println!("{:?}", batch);
     }
 
     rt.shutdown().await?;

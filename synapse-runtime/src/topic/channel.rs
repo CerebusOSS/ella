@@ -1,10 +1,10 @@
 use std::{
+    fmt::Debug,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
     task::Poll,
-    time::Duration,
 };
 
 use datafusion::{
@@ -15,53 +15,163 @@ use datafusion::{
     logical_expr::TableType,
     physical_expr::PhysicalSortExpr,
     physical_plan::{
-        project_schema, stream::RecordBatchStreamAdapter, ColumnStatistics, ExecutionPlan,
-        Partitioning, Statistics,
+        project_schema, stream::RecordBatchStreamAdapter, ExecutionPlan, Partitioning, Statistics,
     },
     prelude::Expr,
 };
 use futures::{FutureExt, Stream, StreamExt};
-use tokio::{
-    sync::{
-        broadcast,
-        mpsc::{self, error::TrySendError},
-        Mutex, Notify,
-    },
-    task::JoinHandle,
-};
+use tokio::sync::{broadcast, Notify};
 use tokio_util::sync::ReusableBoxFuture;
 
-use super::{config::StreamingConfig, RwBuffer};
 use crate::{catalog::TopicId, ArrowSchema, Schema};
 
-#[derive(Debug, Clone)]
-pub struct RwConfig {
-    pub max_rows: usize,
-    pub max_elapsed: Duration,
+use super::{config::ChannelConfig, RwBuffer};
+
+pub struct TopicChannel {
+    topic: TopicId,
+    schema: Arc<Schema>,
+    config: ChannelConfig,
+    publisher: Publisher,
 }
 
-impl Default for RwConfig {
-    fn default() -> Self {
+impl Debug for TopicChannel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TopicChannel")
+            .field("topic", &self.topic)
+            .field("schema", &self.schema)
+            .finish_non_exhaustive()
+    }
+}
+
+impl TopicChannel {
+    pub(crate) fn new(
+        topic: TopicId,
+        schema: Arc<Schema>,
+        rw: Arc<RwBuffer>,
+        config: ChannelConfig,
+    ) -> Self {
+        let (sub_sender, _) = broadcast::channel(config.subscriber_queue_size);
+        let subs = Arc::new(sub_sender);
+        let stop = Arc::new(Notify::new());
+        let active = Arc::new(AtomicUsize::new(0));
+
+        let publisher = Publisher {
+            topic: topic.clone(),
+            schema: schema.clone(),
+            rw,
+            subs,
+            stop,
+            active,
+        };
         Self {
-            max_rows: Default::default(),
-            max_elapsed: Default::default(),
+            topic,
+            schema,
+            config,
+            publisher,
+        }
+    }
+
+    pub fn publish(&self) -> Publisher {
+        self.publisher.clone()
+    }
+
+    pub fn subscribe(&self, stop_on_inactive: bool) -> Subscriber {
+        Subscriber::new(self.subscribe_inner(stop_on_inactive))
+    }
+
+    pub fn config(&self) -> &ChannelConfig {
+        &self.config
+    }
+
+    fn subscribe_inner(&self, stop_on_inactive: bool) -> SubscriberInner {
+        SubscriberInner {
+            inner: self.publisher.subs.subscribe(),
+            stop: self.publisher.stop.clone(),
+            active: self.publisher.active.clone(),
+            stop_on_inactive,
         }
     }
 }
 
-#[derive(Debug)]
-pub struct RwSub {
-    inner: ReusableBoxFuture<'static, (Option<Result<RecordBatch>>, RwSubInner)>,
+pub struct Publisher {
+    topic: TopicId,
+    schema: Arc<Schema>,
+    rw: Arc<RwBuffer>,
+    subs: Arc<broadcast::Sender<RecordBatch>>,
+    stop: Arc<Notify>,
+    active: Arc<AtomicUsize>,
 }
 
-impl RwSub {
-    fn new(inner: RwSubInner) -> Self {
+impl Debug for Publisher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Publisher")
+            .field("topic", &self.topic)
+            .field("schema", &self.schema)
+            .field("active", &self.active)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Clone for Publisher {
+    fn clone(&self) -> Self {
+        self.active.fetch_add(1, Ordering::Release);
+        Self {
+            topic: self.topic.clone(),
+            schema: self.schema.clone(),
+            rw: self.rw.clone(),
+            subs: self.subs.clone(),
+            stop: self.stop.clone(),
+            active: self.active.clone(),
+        }
+    }
+}
+
+impl Drop for Publisher {
+    fn drop(&mut self) {
+        let active = self.active.fetch_sub(1, Ordering::Release) - 1;
+        if active == 0 {
+            self.stop.notify_one();
+        }
+    }
+}
+
+impl Publisher {
+    pub fn try_write<R>(&self, batch: R) -> crate::Result<()>
+    where
+        R: Into<RecordBatch>,
+    {
+        let batch: RecordBatch = batch.into();
+        let batch = batch.with_schema(self.schema.arrow_schema().clone())?;
+        self.rw.try_insert(batch.clone())?;
+        let _ = self.subs.send(batch);
+        Ok(())
+    }
+
+    pub async fn write<R>(&self, batch: R) -> crate::Result<()>
+    where
+        R: Into<RecordBatch>,
+    {
+        let batch: RecordBatch = batch.into();
+        let batch = batch.with_schema(self.schema.arrow_schema().clone())?;
+        self.rw.insert(batch.clone()).await?;
+        let _ = self.subs.send(batch);
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct Subscriber {
+    inner: ReusableBoxFuture<'static, (Option<Result<RecordBatch>>, SubscriberInner)>,
+}
+
+impl Subscriber {
+    fn new(inner: SubscriberInner) -> Self {
         let inner = ReusableBoxFuture::new(inner.next());
         Self { inner }
     }
 }
 
-impl Stream for RwSub {
+impl Stream for Subscriber {
     type Item = Result<RecordBatch>;
 
     fn poll_next(
@@ -75,14 +185,14 @@ impl Stream for RwSub {
 }
 
 #[derive(Debug)]
-struct RwSubInner {
+struct SubscriberInner {
     inner: broadcast::Receiver<RecordBatch>,
     stop: Arc<Notify>,
     active: Arc<AtomicUsize>,
     stop_on_inactive: bool,
 }
 
-impl RwSubInner {
+impl SubscriberInner {
     async fn next(mut self) -> (Option<Result<RecordBatch>>, Self) {
         loop {
             if self.stop_on_inactive && self.active.load(Ordering::Acquire) == 0 {
@@ -122,7 +232,7 @@ impl RwSubInner {
     }
 }
 
-impl Clone for RwSubInner {
+impl Clone for SubscriberInner {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.resubscribe(),
@@ -133,164 +243,8 @@ impl Clone for RwSubInner {
     }
 }
 
-#[derive(Debug)]
-pub struct RwPub {
-    inner: mpsc::Sender<RecordBatch>,
-    schema: Arc<Schema>,
-    stop: Arc<Notify>,
-    active: Arc<AtomicUsize>,
-}
-
-impl Clone for RwPub {
-    fn clone(&self) -> Self {
-        self.active.fetch_add(1, Ordering::Release);
-        Self {
-            inner: self.inner.clone(),
-            schema: self.schema.clone(),
-            stop: self.stop.clone(),
-            active: self.active.clone(),
-        }
-    }
-}
-
-impl Drop for RwPub {
-    fn drop(&mut self) {
-        let active = self.active.fetch_sub(1, Ordering::Release) - 1;
-        tracing::debug!(active, "publisher closed");
-        self.stop.notify_one();
-    }
-}
-
-impl RwPub {
-    pub fn insert<R>(&self, batch: R) -> Result<()>
-    where
-        R: Into<RecordBatch>,
-    {
-        let batch: RecordBatch = batch.into();
-        let batch = batch.with_schema(self.schema.arrow_schema().clone())?;
-
-        match self.inner.try_send(batch) {
-            Ok(_) => Ok(()),
-            Err(TrySendError::Closed(_)) => {
-                Err(DataFusionError::Execution("table unavailable".to_string()))
-            }
-            Err(TrySendError::Full(_)) => {
-                Err(DataFusionError::Execution("table buffer full".to_string()))
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct StreamingTable {
-    topic: TopicId,
-    schema: Arc<Schema>,
-    publish: RwPub,
-    subscribe: Arc<broadcast::Sender<RecordBatch>>,
-    handle: Mutex<Option<JoinHandle<()>>>,
-    stop: Arc<Notify>,
-}
-
-impl StreamingTable {
-    pub fn new(topic: TopicId, rw: Arc<RwBuffer>, config: StreamingConfig) -> Self {
-        let schema = rw.schema();
-        let (pub_send, pub_recv) = mpsc::channel(config.queue_size);
-        let (sub_send, _) = broadcast::channel(100);
-        let subscribe = Arc::new(sub_send);
-
-        let stop = Arc::new(Notify::new());
-        let active = Arc::new(AtomicUsize::new(0));
-        let publish = RwPub {
-            inner: pub_send,
-            schema: schema.clone(),
-            stop: stop.clone(),
-            active: active.clone(),
-        };
-        let handle = tokio::spawn(Self::run(
-            topic.clone(),
-            pub_recv,
-            subscribe.clone(),
-            rw,
-            stop.clone(),
-        ));
-        let handle = Mutex::new(Some(handle));
-        Self {
-            topic,
-            schema,
-            publish,
-            subscribe,
-            handle,
-            stop,
-        }
-    }
-
-    pub fn schema(&self) -> Arc<Schema> {
-        self.schema.clone()
-    }
-
-    pub fn publish(&self) -> RwPub {
-        self.publish.clone()
-    }
-
-    pub fn subscribe(&self, stop_on_inactive: bool) -> RwSub {
-        RwSub::new(self.subscribe_inner(stop_on_inactive))
-    }
-
-    pub async fn close(&self) {
-        self.stop.notify_one();
-
-        let mut lock = self.handle.lock().await;
-        if let Some(handle) = lock.as_mut() {
-            if let Err(error) = handle.await {
-                tracing::error!(topic=%self.topic, error=?error, "streaming table worker panicked");
-            }
-            *lock = None;
-        }
-    }
-
-    fn subscribe_inner(&self, stop_on_inactive: bool) -> RwSubInner {
-        RwSubInner {
-            inner: self.subscribe.subscribe(),
-            stop: self.publish.stop.clone(),
-            active: self.publish.active.clone(),
-            stop_on_inactive,
-        }
-    }
-
-    async fn run(
-        topic: TopicId,
-        mut recv: mpsc::Receiver<RecordBatch>,
-        send: Arc<broadcast::Sender<RecordBatch>>,
-        rw: Arc<RwBuffer>,
-        stop: Arc<Notify>,
-    ) {
-        let wait_stop = stop.notified();
-        futures::pin_mut!(wait_stop);
-        let mut error_logged = false;
-
-        loop {
-            tokio::select! {
-                biased;
-                batch = recv.recv() => match batch {
-                    Some(batch) => {
-                        let _ = send.send(batch.clone());
-                        if let Err(error) = rw.insert(batch) {
-                            if !error_logged {
-                                error_logged = true;
-                                tracing::error!(topic=%topic, ?error, "failed to write to r/w buffer");
-                            }
-                        }
-                    },
-                    None => break,
-                },
-                _ = &mut wait_stop => break,
-            }
-        }
-    }
-}
-
 #[async_trait::async_trait]
-impl TableProvider for StreamingTable {
+impl TableProvider for TopicChannel {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -325,9 +279,10 @@ impl TableProvider for StreamingTable {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct TableExec {
-    src: RwSubInner,
+    src: SubscriberInner,
     schema: Arc<Schema>,
     projected_schema: Arc<ArrowSchema>,
     projection: Option<Vec<usize>>,
@@ -336,7 +291,7 @@ struct TableExec {
 
 impl TableExec {
     fn try_new(
-        src: RwSubInner,
+        src: SubscriberInner,
         schema: Arc<Schema>,
         projection: Option<Vec<usize>>,
     ) -> Result<Self> {
@@ -389,7 +344,7 @@ impl ExecutionPlan for TableExec {
         _partition: usize,
         _context: Arc<datafusion::execution::context::TaskContext>,
     ) -> Result<datafusion::physical_plan::SendableRecordBatchStream> {
-        let stream = RwSub::new(self.src.clone());
+        let stream = Subscriber::new(self.src.clone());
         if let Some(projection) = self.projection.clone() {
             Ok(Box::pin(RecordBatchStreamAdapter::new(
                 self.projected_schema.clone(),

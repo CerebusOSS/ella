@@ -4,7 +4,7 @@ pub struct TopicConfig {
     pub rw_buffer_capacity: usize,
     pub target_shard_size: usize,
     pub min_shard_size: usize,
-    pub streaming_queue_size: usize,
+    pub subscriber_queue_size: usize,
     pub rw_queue_size: usize,
     pub shard_queue_size: usize,
 }
@@ -16,7 +16,7 @@ impl Default for TopicConfig {
             rw_buffer_capacity: 1024 * 1024,
             min_shard_size: 1024 * 1024,
             target_shard_size: 1024 * 1024 * 1024,
-            streaming_queue_size: 1024,
+            subscriber_queue_size: 1024,
             rw_queue_size: 1024,
             shard_queue_size: 128,
         }
@@ -45,7 +45,7 @@ impl TopicConfig {
     }
 
     pub fn with_streaming_queue_size(mut self, size: usize) -> Self {
-        self.streaming_queue_size = size;
+        self.subscriber_queue_size = size;
         self
     }
 
@@ -59,9 +59,9 @@ impl TopicConfig {
         self
     }
 
-    pub(crate) fn streaming_config(&self) -> StreamingConfig {
-        StreamingConfig {
-            queue_size: self.streaming_queue_size,
+    pub(crate) fn channel_config(&self) -> ChannelConfig {
+        ChannelConfig {
+            subscriber_queue_size: self.subscriber_queue_size,
         }
     }
 
@@ -101,6 +101,6 @@ pub struct ShardConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct StreamingConfig {
-    pub queue_size: usize,
+pub struct ChannelConfig {
+    pub subscriber_queue_size: usize,
 }

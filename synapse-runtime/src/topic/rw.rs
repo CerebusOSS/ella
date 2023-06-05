@@ -73,7 +73,18 @@ impl RwBuffer {
         self.schema.clone()
     }
 
-    pub fn insert(&self, batch: RecordBatch) -> crate::Result<()> {
+    pub fn config(&self) -> &RwBufferConfig {
+        &self.config
+    }
+
+    pub async fn insert(&self, batch: RecordBatch) -> crate::Result<()> {
+        match self.input.send(batch).await {
+            Ok(_) => Ok(()),
+            Err(_) => Err(crate::Error::TableClosed),
+        }
+    }
+
+    pub fn try_insert(&self, batch: RecordBatch) -> crate::Result<()> {
         match self.input.try_send(batch) {
             Ok(_) => Ok(()),
             Err(TrySendError::Closed(_)) => Err(crate::Error::TableClosed),

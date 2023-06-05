@@ -1,12 +1,12 @@
+mod channel;
 mod config;
 mod rw;
 mod shard;
-mod streaming;
 
+pub use channel::{Publisher, Subscriber, TopicChannel};
 pub use config::TopicConfig;
 pub use rw::RwBuffer;
 pub use shard::ShardManager;
-pub use streaming::{RwPub, RwSub, StreamingTable};
 
 use std::sync::Arc;
 
@@ -28,12 +28,11 @@ use crate::{
 
 #[derive(Debug)]
 pub struct Topic {
-    ctx: Arc<SynapseContext>,
     id: TopicId,
     config: TopicConfig,
     schema: Arc<Schema>,
     path: Path,
-    streaming: Arc<StreamingTable>,
+    channel: Arc<TopicChannel>,
     rw: Arc<RwBuffer>,
     shards: Arc<ShardManager>,
 }
@@ -55,19 +54,19 @@ impl Topic {
             shards.clone(),
             config.rw_buffer_config(),
         ));
-        let streaming = Arc::new(StreamingTable::new(
+        let channel = Arc::new(TopicChannel::new(
             id.clone(),
+            schema.clone(),
             rw.clone(),
-            config.streaming_config(),
+            config.channel_config(),
         ));
 
         Self {
             id,
             schema,
-            streaming,
+            channel,
             rw,
             shards,
-            ctx,
             path,
             config,
         }
@@ -84,16 +83,23 @@ impl Topic {
         Ok(Self::new(ctx, &state))
     }
 
-    pub fn publish(&self) -> RwPub {
-        self.streaming.publish()
+    pub fn publish(&self) -> Publisher {
+        self.channel.publish()
     }
 
     pub fn id(&self) -> &TopicId {
         &self.id
     }
 
+    pub fn config(&self) -> &TopicConfig {
+        &self.config
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     pub async fn close(&self) -> crate::Result<()> {
-        self.streaming.close().await;
         self.rw.close().await;
         self.shards.close().await
     }
@@ -122,7 +128,7 @@ impl TableProvider for Topic {
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let (streaming, rw, shards) = futures::try_join!(
-            self.streaming.scan(state, projection, filters, limit),
+            self.channel.scan(state, projection, filters, limit),
             self.rw.scan(state, projection, filters, limit),
             self.shards.scan(state, projection, filters, limit),
         )?;
