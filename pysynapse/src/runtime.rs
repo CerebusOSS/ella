@@ -10,7 +10,7 @@ pub struct PyRuntimeConfig {
     pub(crate) cfg: RuntimeConfig,
 }
 
-#[derive(derive_more::Into, derive_more::From)]
+#[derive(Clone, derive_more::Into, derive_more::From)]
 #[pyclass(name = "Runtime")]
 pub struct PyRuntime {
     pub(crate) rt: Runtime,
