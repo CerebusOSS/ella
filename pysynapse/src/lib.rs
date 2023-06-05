@@ -3,6 +3,7 @@ mod runtime;
 mod topic;
 
 use futures::Future;
+use once_cell::sync::OnceCell;
 use pyo3::{
     exceptions::{PyLookupError, PyValueError},
     prelude::*,
@@ -19,10 +20,10 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[pymodule]
 #[pyo3(name = "_internal")]
 fn pysynapse(py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add(
-        "_runtime",
-        TokioRuntime(tokio::runtime::Runtime::new().unwrap()),
-    )?;
+    // m.add(
+    //     "_runtime",
+    //     TokioRuntime(tokio::runtime::Runtime::new().unwrap()),
+    // )?;
     m.add_class::<PyRuntime>()?;
     m.add_class::<PyRuntimeConfig>()?;
     m.add_class::<PyTopic>()?;
@@ -60,23 +61,29 @@ impl From<Error> for PyErr {
     }
 }
 
-#[pyclass]
-pub struct TokioRuntime(tokio::runtime::Runtime);
+// #[pyclass]
+// pub struct TokioRuntime(tokio::runtime::Runtime);
 
-pub(crate) fn get_tokio_runtime(py: Python) -> PyRef<TokioRuntime> {
-    py.import("synapse._internal")
-        .unwrap()
-        .getattr("_runtime")
-        .unwrap()
-        .extract()
-        .unwrap()
+pub(crate) fn tokio_runtime() -> &'static tokio::runtime::Runtime {
+    static INSTANCE: OnceCell<tokio::runtime::Runtime> = OnceCell::new();
+
+    INSTANCE.get_or_init(|| tokio::runtime::Runtime::new().unwrap())
 }
+
+// pub(crate) fn get_tokio_runtime(py: Python) -> PyRef<TokioRuntime> {
+//     py.import("synapse._internal")
+//         .unwrap()
+//         .getattr("_runtime")
+//         .unwrap()
+//         .extract()
+//         .unwrap()
+// }
 
 pub(crate) fn wait_for_future<F: Future>(py: Python, f: F) -> F::Output
 where
     F: Send,
     F::Output: Send,
 {
-    let runtime = &get_tokio_runtime(py).0;
-    py.allow_threads(|| runtime.block_on(f))
+    // let runtime = &get_tokio_runtime(py).0;
+    py.allow_threads(|| tokio_runtime().block_on(f))
 }

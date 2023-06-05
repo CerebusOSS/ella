@@ -20,6 +20,7 @@ paste = { workspace = true }
 thiserror = { workspace = true }
 
 mimalloc = { workspace = true, optional = true }
+once_cell = "1.18.0"
 
 [features]
 default = ["mimalloc"]
