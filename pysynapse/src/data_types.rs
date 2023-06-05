@@ -1,5 +1,8 @@
 use pyo3::prelude::*;
-use synapse::{runtime::Schema, tensor::TensorType};
+use synapse::{
+    runtime::Schema,
+    tensor::{Dyn, TensorType},
+};
 
 pub(crate) fn add_module(py: Python<'_>, parent: &PyModule) -> PyResult<()> {
     let m = PyModule::new(py, "data_types")?;
@@ -12,6 +15,9 @@ pub(crate) fn add_module(py: Python<'_>, parent: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(schema, m)?)?;
 
     parent.add_submodule(m)?;
+    py.import("sys")?
+        .getattr("modules")?
+        .set_item("synapse._internal.data_types", m)?;
     Ok(())
 }
 
@@ -71,6 +77,8 @@ pub struct PyField {
     #[pyo3(get)]
     name: String,
     #[pyo3(get)]
+    row_shape: Option<Vec<usize>>,
+    #[pyo3(get)]
     required: bool,
     #[pyo3(get)]
     index: Option<String>,
@@ -79,41 +87,46 @@ pub struct PyField {
 
 #[pymethods]
 impl PyField {
-    #[pyo3(signature = (name, dtype, required=true, index=None))]
+    #[pyo3(signature = (name, dtype, row_shape=None, required=false, index=None))]
     #[new]
     fn new(
         name: String,
         #[pyo3(from_py_with = "unwrap_dtype")] dtype: TensorType,
+        row_shape: Option<Vec<usize>>,
         required: bool,
         index: Option<String>,
     ) -> Self {
         Self {
             name,
+            row_shape,
             required,
             index,
             dtype,
         }
     }
 
+    #[getter]
     fn data_type(&self, py: Python) -> Py<PyAny> {
         wrap_dtype(py, self.dtype.clone())
     }
 }
 
 #[pyfunction]
-#[pyo3(signature = (name, dtype, required=true, index=None))]
+#[pyo3(signature = (name, dtype, row_shape=None, required=false, index=None))]
 fn field(
     name: String,
     #[pyo3(from_py_with = "unwrap_dtype")] dtype: TensorType,
+    row_shape: Option<Vec<usize>>,
     required: bool,
     index: Option<String>,
 ) -> PyField {
-    PyField::new(name, dtype, required, index)
+    PyField::new(name, dtype, row_shape, required, index)
 }
 
 #[derive(Clone)]
 #[pyclass(name = "Schema")]
 pub struct PySchema {
+    #[pyo3(get)]
     fields: Vec<PyField>,
 }
 
@@ -133,6 +146,10 @@ impl PySchema {
                 .field(&f.name)
                 .data_type(f.dtype.clone())
                 .required(f.required);
+
+            if let Some(shape) = f.row_shape.as_deref() {
+                field = field.row_shape(Dyn::from(shape));
+            }
             if let Some(index) = &f.index {
                 let ascending = if index == "ascending" {
                     true

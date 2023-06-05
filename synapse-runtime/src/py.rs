@@ -7,10 +7,10 @@ impl From<crate::Error> for PyErr {
         match err {
             Tensor(err) => err.into(),
             DataFusion(err) => err.into(),
-            Io(err) => PyIOError::new_err(err.to_string()),
-            UnexpectedDirectory(_) => PyIsADirectoryError::new_err(err.to_string()),
-            InvalidFilename(_) => PyOSError::new_err(err.to_string()),
-            _ => PyRuntimeError::new_err(err.to_string()),
+            Io(err) => PyIOError::new_err(format!("{:?}", err)),
+            UnexpectedDirectory(_) => PyIsADirectoryError::new_err(format!("{:?}", err)),
+            InvalidFilename(_) => PyOSError::new_err(format!("{:?}", err)),
+            _ => PyRuntimeError::new_err(format!("{:?}", err)),
         }
     }
 }

@@ -1,3 +1,4 @@
+use arrow::{pyarrow::PyArrowConvert, record_batch::RecordBatch};
 use pyo3::prelude::*;
 use std::sync::Arc;
 use synapse::runtime::{topic::Publisher, Topic};
@@ -31,4 +32,16 @@ pub struct PyPublisher {
 }
 
 #[pymethods]
-impl PyPublisher {}
+impl PyPublisher {
+    fn try_write(&self, batch: &PyAny) -> PyResult<()> {
+        let batch = RecordBatch::from_pyarrow(batch)?;
+        self.inner.try_write(batch)?;
+        Ok(())
+    }
+
+    fn write(&self, py: Python, batch: &PyAny) -> PyResult<()> {
+        let batch = RecordBatch::from_pyarrow(batch)?;
+        wait_for_future(py, self.inner.write(batch))?;
+        Ok(())
+    }
+}
