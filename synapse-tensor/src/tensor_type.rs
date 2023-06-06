@@ -30,6 +30,7 @@ pub enum TensorType {
     Float64,
     Timestamp,
     Duration,
+    String,
 }
 
 impl TensorType {
@@ -50,6 +51,7 @@ impl TensorType {
             Float64 => DataType::Float64,
             Duration => DataType::Duration(TimeUnit::Nanosecond),
             Timestamp => DataType::Timestamp(TimeUnit::Nanosecond, Some(Arc::from("UTC"))),
+            String => DataType::Utf8,
         }
     }
 
@@ -70,6 +72,7 @@ impl TensorType {
             Float64 => Self::Float64,
             Duration(TimeUnit::Nanosecond) => Self::Duration,
             Timestamp(TimeUnit::Nanosecond, _) => Self::Timestamp,
+            Utf8 => Self::String,
             _ => return Err(crate::Error::DataType(dtype.clone())),
         })
     }

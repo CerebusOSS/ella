@@ -27,7 +27,7 @@ macro_rules! impl_tensor_compare {
 
             $(
                 fn $op(&self, other: &Tensor<T2, S>) -> Self::Output {
-                    unary_op(&other, |t| T1::apply(*self, t, |a, b| a $kernel b))
+                    unary_op(&other, |t| T1::apply(self.clone(), t, |a, b| a $kernel b))
                 }
             )+
         }

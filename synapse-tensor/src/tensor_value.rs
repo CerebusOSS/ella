@@ -1,13 +1,13 @@
 use crate::TensorType;
 use arrow::{
-    array::{Array, ArrayData, BooleanArray, PrimitiveArray},
+    array::{Array, ArrayData, BooleanArray, PrimitiveArray, StringArray},
     datatypes::*,
 };
 use std::fmt::{Debug, Write};
 use synapse_time::{Duration, OffsetDateTime, Time};
 use time::format_description::well_known::Rfc3339;
 
-pub trait TensorValue: Debug + Clone + Copy + PartialEq + PartialOrd + 'static {
+pub trait TensorValue: Debug + Clone + PartialEq + PartialOrd + 'static {
     type Array: Array + Clone + 'static;
     type Masked: TensorValue<Array = Self::Array>;
     type Unmasked: TensorValue<Array = Self::Array>;
@@ -473,5 +473,61 @@ impl TensorValue for Time {
 
     fn format(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         <_ as std::fmt::Display>::fmt(self, f)
+    }
+}
+
+impl TensorValue for String {
+    type Array = StringArray;
+    type Masked = Option<String>;
+    type Unmasked = String;
+    const TENSOR_TYPE: TensorType = TensorType::String;
+    const NULLABLE: bool = false;
+
+    fn value(array: &Self::Array, i: usize) -> Self {
+        array.value(i).to_string()
+    }
+
+    unsafe fn value_unchecked(array: &Self::Array, i: usize) -> Self {
+        array.value_unchecked(i).to_string()
+    }
+
+    fn to_masked(value: Self) -> Self::Masked {
+        Some(value)
+    }
+
+    fn to_unmasked(value: Self) -> Self::Unmasked {
+        value
+    }
+
+    fn from_iter_masked<I>(iter: I) -> Self::Array
+    where
+        I: IntoIterator<Item = Self::Masked>,
+    {
+        StringArray::from_iter(iter)
+    }
+
+    fn from_vec(values: Vec<Self>) -> Self::Array {
+        StringArray::from_iter_values(values)
+    }
+
+    unsafe fn from_trusted_len_iter_masked<I>(iter: I) -> Self::Array
+    where
+        I: IntoIterator<Item = Self::Masked>,
+    {
+        StringArray::from_iter(iter)
+    }
+
+    fn slice(array: &Self::Array, offset: usize, length: usize) -> Self::Array {
+        array.slice(offset, length)
+    }
+
+    fn from_array_data(data: ArrayData) -> Self::Array {
+        data.into()
+    }
+
+    fn format(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char('"')?;
+        f.write_str(self)?;
+        f.write_char('"')
     }
 }

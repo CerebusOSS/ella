@@ -64,8 +64,8 @@ where
     where
         T: Num,
     {
-        let values = std::iter::successors(Some(start), |&x| {
-            let value = x + step;
+        let values = std::iter::successors(Some(start), |x| {
+            let value = x.clone() + step.clone();
             if value < end {
                 Some(value)
             } else {

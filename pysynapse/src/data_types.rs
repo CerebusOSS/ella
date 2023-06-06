@@ -66,7 +66,7 @@ macro_rules! impl_type_wrappers {
 
 impl_type_wrappers!(
     Bool, Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, Float64, Timestamp,
-    Duration
+    Duration, String
 );
 
 fn unwrap_dtype(t: &PyAny) -> PyResult<TensorType> {

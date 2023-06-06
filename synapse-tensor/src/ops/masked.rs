@@ -32,7 +32,7 @@ where
     }
 
     pub fn fill_masked(&self, value: T::Unmasked) -> Tensor<T::Unmasked, S> {
-        self.map(|x| T::to_option(x).unwrap_or(value))
+        self.map(|x| T::to_option(x).unwrap_or(value.clone()))
     }
 
     pub fn drop_mask(&self) -> Tensor<T::Unmasked, S> {

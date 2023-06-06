@@ -213,6 +213,7 @@ macro_rules! impl_make_column {
 
             match dtype {
                 TensorType::Bool => Column::new(name, Tensor::<bool, Dyn>::new(array.as_boolean().clone(), shape, strides)),
+                TensorType::String => Column::new(name, Tensor::<String, Dyn>::new(array.as_string().clone(), shape, strides)),
                 $(
                     TensorType::$tensor_type => Column::new(name, Tensor::<$t, Dyn>::new(array.as_primitive::<$arrow_type>().clone(), shape, strides)),
                 )+
