@@ -8,6 +8,8 @@ use datafusion::{
 };
 use synapse_tensor::{tensor_schema, Dyn, IntoShape, Shape, TensorType};
 
+use crate::util::parquet::parquet_compat_schema;
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct IndexColumn {
     pub name: String,
@@ -19,6 +21,7 @@ pub struct IndexColumn {
 pub struct Schema {
     inner: Arc<ArrowSchema>,
     index_columns: Vec<IndexColumn>,
+    parquet: Option<Arc<ArrowSchema>>,
 }
 
 impl Schema {
@@ -29,6 +32,10 @@ impl Schema {
 
     pub fn arrow_schema(&self) -> &Arc<ArrowSchema> {
         &self.inner
+    }
+
+    pub fn parquet_schema(&self) -> Option<&Arc<ArrowSchema>> {
+        self.parquet.as_ref()
     }
 
     pub fn index_columns(&self) -> &[IndexColumn] {
@@ -92,8 +99,10 @@ impl SchemaBuilder {
 
     pub fn build(&mut self) -> Schema {
         let inner = Arc::new(ArrowSchema::new(self.fields.clone()));
+        let parquet = parquet_compat_schema(inner.clone());
         Schema {
             inner,
+            parquet,
             index_columns: self.index_columns.clone(),
         }
     }

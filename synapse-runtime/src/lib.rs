@@ -7,7 +7,9 @@ mod py;
 mod runtime;
 pub mod schema;
 pub mod topic;
-mod work_queue;
+pub(crate) mod util;
+
+use std::{any::Any, fmt::Debug};
 
 pub use context::SynapseContext;
 pub use path::Path;
@@ -45,8 +47,24 @@ pub enum Error {
     TableClosed,
     #[error("table queue full")]
     TableQueueFull,
-    #[error("worker panicked: {0}")]
-    WorkerPanic(String),
+    #[error("worker {id} exited with error: {error:?}")]
+    Worker { id: String, error: String },
+}
+
+impl Error {
+    pub(crate) fn worker_panic(id: &str, error: &Box<dyn Any + Send + 'static>) -> Self {
+        let error = if let Some(e) = error.downcast_ref::<String>() {
+            e.clone()
+        } else if let Some(e) = error.downcast_ref::<&'static str>() {
+            e.to_string()
+        } else {
+            format!("{:?}", error)
+        };
+        Self::Worker {
+            id: id.to_string(),
+            error,
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

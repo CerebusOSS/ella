@@ -21,6 +21,10 @@ async fn main() -> anyhow::Result<()> {
         .field("i")
         .data_type(TensorType::Int32)
         .finish()
+        .field("dt")
+        .data_type(TensorType::Duration)
+        .row_shape((2,))
+        .finish()
         .field("x")
         .data_type(TensorType::Float32)
         .row_shape((5,))
@@ -39,6 +43,10 @@ async fn main() -> anyhow::Result<()> {
         let data = tensor::frame!(
             time = tensor::tensor![synapse_time::now()],
             i = tensor::tensor![i],
+            dt = tensor::tensor![[
+                synapse_time::Duration::milliseconds(50),
+                synapse_time::Duration::milliseconds(2)
+            ]],
             x = Tensor::linspace(i as f32, (i + 1) as f32, 5).unsqueeze(0),
             y = Tensor::linspace(i as f32, (i - 1) as f32, 2).reshape((1, 2)),
         );

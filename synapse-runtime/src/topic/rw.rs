@@ -10,7 +10,6 @@ use datafusion::{
     physical_plan::{memory::MemoryExec, ExecutionPlan},
     prelude::Expr,
 };
-use futures::FutureExt;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{Mutex, Notify};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -18,7 +17,7 @@ use tokio::{sync::mpsc, task::JoinHandle};
 use super::config::RwBufferConfig;
 use super::ShardManager;
 use crate::catalog::TopicId;
-use crate::work_queue::{work_queue, WorkQueueIn, WorkQueueOut};
+use crate::util::work_queue::{work_queue, WorkQueueIn, WorkQueueOut};
 use crate::Schema;
 
 #[derive(Debug)]
@@ -142,7 +141,10 @@ impl RwBuffer {
             let rows = batch.num_rows();
             writing_in.push(batch);
             let shards = shards.clone();
-            let res = writing_in.process(|values| shards.write(values).map(|_| {}));
+            let res = writing_in.try_process(|values| async move {
+                let _ = shards.write(values)?.await;
+                Ok(())
+            });
             match res {
                 Ok(_) => tracing::debug!(%topic, rows, "writing compacted buffer"),
                 Err(error) => tracing::error!(?error, rows, "failed to write compacted buffer"),
@@ -168,20 +170,30 @@ impl RwBuffer {
                             compact_buffer(len);
                         }
                         compacting_out.close();
-                        while let Some(batch) = compacting_out.ready().await {
-                            write_batch(batch);
+                        while let Some(res) = compacting_out.ready().await {
+                            match res {
+                                Ok(batch) => write_batch(batch),
+                                Err(error) => tracing::error!(%topic, ?error, "failed to compact records"),
+                            }
                         }
                         break
                     },
                 },
                 // Take compacted batches from the compacting queue and push them to th write queue.
                 compacted = compacting_out.ready() => match compacted {
-                    Some(batch) => {
-                        write_batch(batch);
+                    Some(res) => {
+                        match res {
+                            Ok(batch) => write_batch(batch),
+                            Err(error) => tracing::error!(%topic, ?error, "failed to compact records"),
+                        }
                     },
                     None => unreachable!(),
                 },
-                Some(_) = writing_out.ready() => {},
+                Some(res) = writing_out.ready() => {
+                    if let Err(error) = res {
+                        tracing::error!(%topic, ?error, "failed to write batch to disk");
+                    }
+                },
                 _ = &mut wait_stop => {
                     recv.close();
                 },
@@ -219,14 +231,9 @@ impl TableProvider for RwBuffer {
         _filters: &[Expr],
         _limit: Option<usize>,
     ) -> DfResult<Arc<dyn ExecutionPlan>> {
-        // let batches = self.buffer.read().await.items().clone();
         let compacting = self.compacting.values();
         let writing = self.writing.values();
-        // let pending = self.pending.values();
-        // let pending = self.pending.lock().unwrap().values().unwrap();
-        // let pending = self.pending.values();
         let mut table = MemoryExec::try_new(
-            // &[batches, pending],
             &[compacting, writing],
             self.schema().arrow_schema().clone(),
             projection.cloned(),
@@ -236,10 +243,4 @@ impl TableProvider for RwBuffer {
         }
         Ok(Arc::new(table))
     }
-
-    // fn statistics(&self) -> Option<Statistics> {
-    //     Some(Statistics {
-
-    //     })
-    // }
 }

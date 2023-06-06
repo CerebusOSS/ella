@@ -59,7 +59,7 @@ impl ValueTracker {
 #[derive(Debug)]
 pub struct WorkQueueIn<T> {
     values: Arc<RwLock<ValueTracker>>,
-    send: mpsc::Sender<(usize, BoxFuture<'static, T>)>,
+    send: mpsc::Sender<(usize, BoxFuture<'static, crate::Result<T>>)>,
 }
 
 impl<T> WorkQueueIn<T>
@@ -74,10 +74,10 @@ where
         self.values.read().unwrap().values()
     }
 
-    pub fn process<F, Fut>(&self, f: F) -> crate::Result<()>
+    pub fn try_process<F, Fut>(&self, f: F) -> crate::Result<()>
     where
         F: FnOnce(Vec<RecordBatch>) -> Fut,
-        Fut: Future<Output = T> + Send + 'static,
+        Fut: Future<Output = crate::Result<T>> + Send + 'static,
     {
         let (count, values) = {
             let mut v = self.values.write().unwrap();
@@ -91,17 +91,25 @@ where
             Err(TrySendError::Full(_)) => Err(crate::Error::TableQueueFull),
         }
     }
+
+    pub fn process<F, Fut>(&self, f: F) -> crate::Result<()>
+    where
+        F: FnOnce(Vec<RecordBatch>) -> Fut,
+        Fut: Future<Output = T> + Send + 'static,
+    {
+        self.try_process(|values| f(values).map(crate::Result::Ok))
+    }
 }
 
 #[derive(Debug)]
 pub struct WorkQueueOut<T> {
     values: Arc<RwLock<ValueTracker>>,
-    recv: mpsc::Receiver<(usize, T)>,
+    recv: mpsc::Receiver<(usize, crate::Result<T>)>,
     stop: Arc<Notify>,
 }
 
 impl<T> WorkQueueOut<T> {
-    pub async fn ready(&mut self) -> Option<T> {
+    pub async fn ready(&mut self) -> Option<crate::Result<T>> {
         if let Some((count, item)) = self.recv.recv().await {
             self.values.write().unwrap().finish(count);
             Some(item)
@@ -134,8 +142,8 @@ where
 }
 
 async fn process_queue<T>(
-    mut recv: mpsc::Receiver<(usize, BoxFuture<'static, T>)>,
-    send: mpsc::Sender<(usize, T)>,
+    mut recv: mpsc::Receiver<(usize, BoxFuture<'static, crate::Result<T>>)>,
+    send: mpsc::Sender<(usize, crate::Result<T>)>,
     stop: Arc<Notify>,
 ) {
     let done = stop.notified().fuse();
