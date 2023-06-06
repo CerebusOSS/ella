@@ -16,7 +16,7 @@ use datafusion::{
     optimizer::utils::conjunction,
     parquet::{arrow::AsyncArrowWriter, file::properties::WriterProperties},
     physical_expr::create_physical_expr,
-    physical_plan::{file_format::FileScanConfig, ExecutionPlan, Statistics},
+    physical_plan::{file_format::FileScanConfig, project_schema, ExecutionPlan, Statistics},
     prelude::Expr,
 };
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
@@ -283,7 +283,11 @@ impl TableProvider for ShardManager {
             .await?;
 
         if let Some(schema) = self.schema.parquet_schema() {
-            plan = cast_batch_plan(plan, schema, self.schema.arrow_schema())?;
+            let parquet_projected = project_schema(schema, projection)?;
+            let arrow_projected = project_schema(self.schema.arrow_schema(), projection)?;
+            if parquet_projected != arrow_projected {
+                plan = cast_batch_plan(plan, &parquet_projected, &arrow_projected)?;
+            }
         }
         Ok(plan)
     }

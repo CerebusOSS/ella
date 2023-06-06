@@ -17,7 +17,7 @@ use datafusion::{
     error::Result,
     execution::context::SessionState,
     logical_expr::TableType,
-    physical_plan::{union::UnionExec, ExecutionPlan},
+    physical_plan::{project_schema, union::UnionExec, ExecutionPlan},
     prelude::Expr,
 };
 
@@ -132,9 +132,10 @@ impl TableProvider for Topic {
             self.rw.scan(state, projection, filters, limit),
             self.shards.scan(state, projection, filters, limit),
         )?;
+        let schema = project_schema(self.schema.arrow_schema(), projection)?;
         Ok(Arc::new(UnionExec::try_new_with_schema(
             vec![shards, rw, streaming],
-            self.schema.arrow_schema().clone().to_dfschema_ref()?,
+            schema.to_dfschema_ref()?,
         )?))
     }
 

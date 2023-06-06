@@ -325,7 +325,7 @@ impl ExecutionPlan for TableExec {
     }
 
     fn unbounded_output(&self, _children: &[bool]) -> Result<bool> {
-        Ok(true)
+        Ok(!self.src.stop_on_inactive)
     }
 
     fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
