@@ -1,10 +1,12 @@
 use std::{collections::HashMap, sync::Arc};
 
 use datafusion::prelude::{DataFrame, SessionConfig, SessionContext};
+use synapse_time::Duration;
 
 use crate::{
     catalog::{Catalog, TopicId},
     topic::{Topic, TopicConfig},
+    util::instrument::LoadMonitor,
     Schema, SynapseContext,
 };
 
@@ -12,6 +14,7 @@ use crate::{
 pub struct RuntimeConfig {
     default_topic_config: TopicConfig,
     topic_config_overrides: HashMap<TopicId, TopicConfig>,
+    log_load_metrics: Option<Duration>,
 }
 
 impl Default for RuntimeConfig {
@@ -19,11 +22,21 @@ impl Default for RuntimeConfig {
         Self {
             default_topic_config: TopicConfig::default(),
             topic_config_overrides: HashMap::new(),
+            log_load_metrics: None,
         }
     }
 }
 
 impl RuntimeConfig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_log_load_metrics(mut self, rate: Duration) -> Self {
+        self.log_load_metrics = Some(rate);
+        self
+    }
+
     pub fn with_default_topic_config(mut self, config: TopicConfig) -> Self {
         self.default_topic_config = config;
         self
@@ -51,6 +64,7 @@ impl RuntimeConfig {
 pub struct Runtime {
     ctx: Arc<SynapseContext>,
     catalog: Arc<Catalog>,
+    load_monitor: Arc<Option<LoadMonitor>>,
 }
 
 impl Runtime {
@@ -62,6 +76,7 @@ impl Runtime {
         root: impl AsRef<str>,
         config: RuntimeConfig,
     ) -> crate::Result<Self> {
+        let load_monitor = Arc::new(config.log_load_metrics.map(|rate| LoadMonitor::start(rate)));
         let root: crate::Path = root.as_ref().parse()?;
         let df_cfg = SessionConfig::new()
             .with_create_default_catalog_and_schema(false)
@@ -73,7 +88,11 @@ impl Runtime {
         let catalog = Catalog::open(ctx.clone()).await?;
         ctx.session()
             .register_catalog(Catalog::CATALOG_ID, catalog.clone().catalog_provider());
-        Ok(Self { ctx, catalog })
+        Ok(Self {
+            ctx,
+            catalog,
+            load_monitor,
+        })
     }
 
     pub fn topic<T>(&self, topic: T) -> TopicRef<'_>
@@ -118,6 +137,9 @@ impl Runtime {
                 tracing::error!(topic=%topic, ?error, "error while closing topic");
                 out = Err(error);
             }
+        }
+        if let Some(monitor) = self.load_monitor.as_ref() {
+            monitor.stop();
         }
 
         out

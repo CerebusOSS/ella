@@ -18,9 +18,10 @@ derive_more = { workspace = true }
 arrow = { workspace = true, features = ["pyarrow"] }
 paste = { workspace = true }
 thiserror = { workspace = true }
+once_cell = { workspace = true }
 
 mimalloc = { workspace = true, optional = true }
-once_cell = "1.18.0"
+
 
 [features]
 default = ["mimalloc"]

@@ -10,32 +10,44 @@ use datafusion::{
     physical_plan::{memory::MemoryExec, ExecutionPlan},
     prelude::Expr,
 };
-use tokio::sync::mpsc::error::TrySendError;
+
+use flume::TrySendError;
 use tokio::sync::{Mutex, Notify};
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::task::JoinHandle;
 
 use super::config::RwBufferConfig;
 use super::ShardManager;
 use crate::catalog::TopicId;
+use crate::util::instrument::Instrument;
 use crate::util::work_queue::{work_queue, WorkQueueIn, WorkQueueOut};
 use crate::Schema;
 
-#[derive(Debug)]
 pub struct RwBuffer {
     topic: TopicId,
     config: RwBufferConfig,
     schema: Arc<Schema>,
-    input: mpsc::Sender<RecordBatch>,
+    input: Instrument<flume::Sender<RecordBatch>>,
     compacting: Arc<WorkQueueIn<RecordBatch>>,
     writing: Arc<WorkQueueIn<()>>,
     handle: Mutex<Option<JoinHandle<()>>>,
     stop: Arc<Notify>,
 }
 
+impl Debug for RwBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RwBuffer")
+            .field("topic", &self.topic)
+            .field("config", &self.config)
+            .field("schema", &self.schema)
+            .finish_non_exhaustive()
+    }
+}
+
 impl RwBuffer {
     pub fn new(topic: TopicId, shards: Arc<ShardManager>, config: RwBufferConfig) -> Self {
         let schema = shards.schema();
-        let (input, recv) = mpsc::channel(config.queue_size);
+        let (send, recv) = flume::bounded(config.queue_size);
+        let input = Instrument::new(send, &format!("{}.rw.input", topic));
         let (compacting, compacting_out) = work_queue(config.queue_size);
         let (writing, writing_out) = work_queue(config.queue_size);
         let compacting = Arc::new(compacting);
@@ -77,7 +89,7 @@ impl RwBuffer {
     }
 
     pub async fn insert(&self, batch: RecordBatch) -> crate::Result<()> {
-        match self.input.send(batch).await {
+        match self.input.send_async(batch).await {
             Ok(_) => Ok(()),
             Err(_) => Err(crate::Error::TableClosed),
         }
@@ -86,7 +98,7 @@ impl RwBuffer {
     pub fn try_insert(&self, batch: RecordBatch) -> crate::Result<()> {
         match self.input.try_send(batch) {
             Ok(_) => Ok(()),
-            Err(TrySendError::Closed(_)) => Err(crate::Error::TableClosed),
+            Err(TrySendError::Disconnected(_)) => Err(crate::Error::TableClosed),
             Err(TrySendError::Full(_)) => Err(crate::Error::TableQueueFull),
         }
     }
@@ -105,7 +117,7 @@ impl RwBuffer {
 
     async fn run(
         topic: TopicId,
-        mut recv: mpsc::Receiver<RecordBatch>,
+        recv: flume::Receiver<RecordBatch>,
         compacting_in: Arc<WorkQueueIn<RecordBatch>>,
         mut compacting_out: WorkQueueOut<RecordBatch>,
         writing_in: Arc<WorkQueueIn<()>>,
@@ -155,8 +167,8 @@ impl RwBuffer {
         loop {
             tokio::select! {
                 biased;
-                batch = recv.recv() => match batch {
-                    Some(batch) => {
+                batch = recv.recv_async() => match batch {
+                    Ok(batch) => {
                         len += batch.num_rows();
                         compacting_in.push(batch);
                         if len >= config.write_batch_size {
@@ -164,20 +176,7 @@ impl RwBuffer {
                             len = 0;
                         }
                     },
-                    // Finish compacting any remaining rows and send the compacted batches to the write queue.
-                    None => {
-                        if len > 0 {
-                            compact_buffer(len);
-                        }
-                        compacting_out.close();
-                        while let Some(res) = compacting_out.ready().await {
-                            match res {
-                                Ok(batch) => write_batch(batch),
-                                Err(error) => tracing::error!(%topic, ?error, "failed to compact records"),
-                            }
-                        }
-                        break
-                    },
+                    Err(_) => break,
                 },
                 // Take compacted batches from the compacting queue and push them to th write queue.
                 compacted = compacting_out.ready() => match compacted {
@@ -194,12 +193,30 @@ impl RwBuffer {
                         tracing::error!(%topic, ?error, "failed to write batch to disk");
                     }
                 },
-                _ = &mut wait_stop => {
-                    recv.close();
-                },
+                _ = &mut wait_stop => break,
             }
         }
         tracing::debug!(topic=%topic, "shutting down R/W buffer worker");
+
+        for batch in recv.drain() {
+            len += batch.num_rows();
+            compacting_in.push(batch);
+            if len >= config.write_batch_size {
+                compact_buffer(len);
+                len = 0;
+            }
+        }
+        if len > 0 {
+            compact_buffer(len);
+        }
+        // Finish compacting any remaining rows and send the compacted batches to the write queue.
+        compacting_out.close();
+        while let Some(res) = compacting_out.ready().await {
+            match res {
+                Ok(batch) => write_batch(batch),
+                Err(error) => tracing::error!(%topic, ?error, "failed to compact records"),
+            }
+        }
 
         // Close the write queue.
         // We don't need to wait for the queue to finish since that will be handled by the shard writer.
