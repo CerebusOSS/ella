@@ -22,7 +22,7 @@ use datafusion::{
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
 use tokio::{
     io::AsyncWrite,
-    sync::{mpsc, oneshot, Mutex, Notify, RwLock},
+    sync::{oneshot, Mutex, Notify, RwLock},
     task::JoinHandle,
 };
 
@@ -32,7 +32,10 @@ use crate::{
         transactions::{CloseShard, CreateShard, DeleteShard},
         ShardId, TopicId,
     },
-    util::parquet::{cast_batch, cast_batch_plan},
+    util::{
+        instrument::Instrument,
+        parquet::{cast_batch, cast_batch_plan},
+    },
     Path, Schema, SynapseContext,
 };
 
@@ -119,7 +122,7 @@ pub struct ShardManager {
     path: Path,
     ctx: Arc<SynapseContext>,
     shards: Arc<ShardSet>,
-    input: mpsc::Sender<WriteJob>,
+    input: Instrument<flume::Sender<WriteJob>>,
     stop: Arc<Notify>,
     handle: Mutex<Option<JoinHandle<crate::Result<()>>>>,
 }
@@ -134,7 +137,8 @@ impl ShardManager {
         let topic = state.id.clone();
         let path = state.path.clone();
         let shards = Arc::new(ShardSet::new(ctx.clone(), state));
-        let (input, output) = mpsc::channel(config.queue_size);
+        let (input, output) = flume::bounded(config.queue_size);
+        let input = Instrument::new(input, &format!("{}.shard.manager", topic));
         let stop = Arc::new(Notify::new());
         let worker = ShardWriterWorker {
             schema: schema.clone(),
@@ -301,11 +305,11 @@ pub struct ShardWriterWorker {
     stop: Arc<Notify>,
     config: ShardConfig,
     shards: Arc<ShardSet>,
-    recv: mpsc::Receiver<WriteJob>,
+    recv: flume::Receiver<WriteJob>,
 }
 
 impl ShardWriterWorker {
-    async fn run(mut self) -> crate::Result<()> {
+    async fn run(self) -> crate::Result<()> {
         let wait_stop = self.stop.notified();
         futures::pin_mut!(wait_stop);
 
@@ -316,8 +320,8 @@ impl ShardWriterWorker {
         loop {
             tokio::select! {
                 biased;
-                job = self.recv.recv() => {
-                    if let Some(job) = job {
+                job = self.recv.recv_async() => {
+                    if let Ok(job) = job {
                         for batch in &job.values {
                             len += batch.num_rows();
                         }
@@ -380,12 +384,12 @@ pub struct WriteJob {
 #[derive(Debug)]
 pub struct JobHandle {
     handle: Option<JoinHandle<crate::Result<()>>>,
-    input: mpsc::Sender<WriteJob>,
+    input: flume::Sender<WriteJob>,
 }
 
 impl JobHandle {
     pub fn new(shard: SingleShardWriter) -> Self {
-        let (input, output) = mpsc::channel(shard.config.queue_size);
+        let (input, output) = flume::bounded(shard.config.queue_size);
         let handle = Some(tokio::spawn(Self::run(output, shard)));
         Self { handle, input }
     }
@@ -436,11 +440,11 @@ impl JobHandle {
     }
 
     async fn run(
-        mut jobs: mpsc::Receiver<WriteJob>,
+        jobs: flume::Receiver<WriteJob>,
         mut shard: SingleShardWriter,
     ) -> crate::Result<()> {
         let mut pending = Vec::new();
-        while let Some(job) = jobs.recv().await {
+        while let Ok(job) = jobs.recv_async().await {
             for batch in job.values {
                 if let Err(error) = shard.write(&batch).await {
                     shard.abort().await?;
