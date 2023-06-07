@@ -1,7 +1,7 @@
 use arrow::{pyarrow::FromPyArrow, record_batch::RecordBatch};
 use pyo3::prelude::*;
 use std::sync::Arc;
-use synapse::runtime::{topic::Publisher, Topic};
+use synapse::engine::{topic::Publisher, Topic};
 
 use crate::wait_for_future;
 

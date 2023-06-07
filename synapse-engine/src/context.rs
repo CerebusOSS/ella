@@ -3,14 +3,14 @@ use std::{fmt::Debug, sync::Arc};
 use datafusion::{execution::runtime_env::RuntimeEnv, prelude::SessionContext};
 use object_store::ObjectStore;
 
-use crate::{catalog::TransactionLog, Path, RuntimeConfig};
+use crate::{catalog::TransactionLog, EngineConfig, Path};
 
 pub struct SynapseContext {
     root: Path,
     log: Arc<TransactionLog>,
     store: Arc<dyn ObjectStore + 'static>,
     session: SessionContext,
-    config: RuntimeConfig,
+    config: EngineConfig,
 }
 
 impl Debug for SynapseContext {
@@ -28,7 +28,7 @@ impl SynapseContext {
     pub fn new(
         root: Path,
         session: SessionContext,
-        config: RuntimeConfig,
+        config: EngineConfig,
         env: &RuntimeEnv,
     ) -> crate::Result<Self> {
         let store = env.object_store(&root)?;
@@ -59,7 +59,7 @@ impl SynapseContext {
         &self.session
     }
 
-    pub fn config(&self) -> &RuntimeConfig {
+    pub fn config(&self) -> &EngineConfig {
         &self.config
     }
 }

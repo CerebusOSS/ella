@@ -2,7 +2,7 @@
 members = [
     "synapse",
     "synapse-tensor",
-    "synapse-runtime",
+    "synapse-engine",
     "synapse-time",
     "synapse-row",
     "pysynapse",
@@ -17,7 +17,7 @@ authors = ["Dexter Duckworth <dexterduck@users.noreply.github.com>"]
 [workspace.dependencies]
 synapse-time = { path = "./synapse-time" }
 synapse-tensor = { path = "./synapse-tensor" }
-synapse-runtime = { path = "./synapse-runtime" }
+synapse-engine = { path = "./synapse-engine" }
 synapse = { path = "./synapse" }
 pysynapse = { path = "./pysynapse" }
 

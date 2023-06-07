@@ -1,45 +1,45 @@
 use pyo3::prelude::*;
 
-use synapse::runtime::{Runtime, RuntimeConfig};
+use synapse::engine::{Engine, EngineConfig};
 
 use crate::{data_types::PySchema, wait_for_future, PyTopic};
 
 #[derive(Clone)]
-#[pyclass(name = "RuntimeConfig")]
-pub struct PyRuntimeConfig {
-    pub(crate) cfg: RuntimeConfig,
+#[pyclass(name = "EngineConfig")]
+pub struct PyEngineConfig {
+    pub(crate) cfg: EngineConfig,
 }
 
 #[derive(Clone, derive_more::Into, derive_more::From)]
-#[pyclass(name = "Runtime")]
-pub struct PyRuntime {
-    pub(crate) rt: Runtime,
+#[pyclass(name = "Engine")]
+pub struct PyEngine {
+    pub(crate) engine: Engine,
 }
 
 #[pymethods]
-impl PyRuntime {
+impl PyEngine {
     #[pyo3(signature = (root, config=None))]
     #[new]
-    fn new(py: Python, root: String, config: Option<PyRuntimeConfig>) -> crate::Result<Self> {
+    fn new(py: Python, root: String, config: Option<PyEngineConfig>) -> crate::Result<Self> {
         let config = if let Some(c) = config {
             c.cfg
         } else {
-            RuntimeConfig::default()
+            EngineConfig::default()
         };
-        let rt = wait_for_future(py, Runtime::start_with_config(root, config))?;
-        Ok(Self { rt })
+        let engine = wait_for_future(py, Engine::start_with_config(root, config))?;
+        Ok(Self { engine })
     }
 
     fn shutdown(&self, py: Python) -> crate::Result<()> {
-        Ok(wait_for_future(py, self.rt.shutdown())?)
+        Ok(wait_for_future(py, self.engine.shutdown())?)
     }
 
     #[pyo3(signature = (name, schema=None))]
     fn topic(&self, py: Python, name: String, schema: Option<PySchema>) -> crate::Result<PyTopic> {
         let topic = if let Some(schema) = schema {
-            wait_for_future(py, self.rt.topic(name).get_or_create(schema.into()))?
+            wait_for_future(py, self.engine.topic(name).get_or_create(schema.into()))?
         } else {
-            self.rt
+            self.engine
                 .topic(&name)
                 .get()
                 .ok_or_else(|| crate::Error::TopicNotFound(name))?
@@ -67,7 +67,7 @@ impl PyRuntime {
 pub(crate) fn runtime(
     py: Python,
     root: String,
-    config: Option<PyRuntimeConfig>,
-) -> crate::Result<PyRuntime> {
-    PyRuntime::new(py, root, config)
+    config: Option<PyEngineConfig>,
+) -> crate::Result<PyEngine> {
+    PyEngine::new(py, root, config)
 }

@@ -11,13 +11,13 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct RuntimeConfig {
+pub struct EngineConfig {
     default_topic_config: TopicConfig,
     topic_config_overrides: HashMap<TopicId, TopicConfig>,
     log_load_metrics: Option<Duration>,
 }
 
-impl Default for RuntimeConfig {
+impl Default for EngineConfig {
     fn default() -> Self {
         Self {
             default_topic_config: TopicConfig::default(),
@@ -27,7 +27,7 @@ impl Default for RuntimeConfig {
     }
 }
 
-impl RuntimeConfig {
+impl EngineConfig {
     pub fn new() -> Self {
         Self::default()
     }
@@ -61,20 +61,20 @@ impl RuntimeConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct Runtime {
+pub struct Engine {
     ctx: Arc<SynapseContext>,
     catalog: Arc<Catalog>,
     load_monitor: Arc<Option<LoadMonitor>>,
 }
 
-impl Runtime {
+impl Engine {
     pub async fn start(root: impl AsRef<str>) -> crate::Result<Self> {
-        Self::start_with_config(root, RuntimeConfig::default()).await
+        Self::start_with_config(root, EngineConfig::default()).await
     }
 
     pub async fn start_with_config(
         root: impl AsRef<str>,
-        config: RuntimeConfig,
+        config: EngineConfig,
     ) -> crate::Result<Self> {
         let load_monitor = Arc::new(config.log_load_metrics.map(|rate| LoadMonitor::start(rate)));
         let root: crate::Path = root.as_ref().parse()?;
@@ -101,7 +101,7 @@ impl Runtime {
     {
         TopicRef {
             topic: topic.into(),
-            rt: self,
+            engine: self,
         }
     }
 
@@ -148,7 +148,7 @@ impl Runtime {
 
 pub struct TopicRef<'a> {
     topic: TopicId,
-    rt: &'a Runtime,
+    engine: &'a Engine,
 }
 
 impl<'a> TopicRef<'a> {
@@ -156,11 +156,11 @@ impl<'a> TopicRef<'a> {
         if let Some(topic) = self.get() {
             Ok(topic)
         } else {
-            self.rt.catalog.create_topic(self.topic, schema).await
+            self.engine.catalog.create_topic(self.topic, schema).await
         }
     }
 
     pub fn get(&self) -> Option<Arc<Topic>> {
-        self.rt.catalog.topic(self.topic.clone())
+        self.engine.catalog.topic(self.topic.clone())
     }
 }

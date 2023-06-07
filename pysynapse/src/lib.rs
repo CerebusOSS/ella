@@ -1,5 +1,5 @@
 mod data_types;
-mod runtime;
+mod engine;
 mod topic;
 
 use futures::Future;
@@ -9,7 +9,7 @@ use pyo3::{
     prelude::*,
 };
 
-pub use runtime::{PyRuntime, PyRuntimeConfig};
+pub use engine::{PyEngine, PyEngineConfig};
 pub use synapse;
 pub use topic::{PyPublisher, PyTopic};
 
@@ -20,12 +20,12 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[pymodule]
 #[pyo3(name = "_internal")]
 fn pysynapse(py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<PyRuntime>()?;
-    m.add_class::<PyRuntimeConfig>()?;
+    m.add_class::<PyEngine>()?;
+    m.add_class::<PyEngineConfig>()?;
     m.add_class::<PyTopic>()?;
     m.add_class::<PyPublisher>()?;
 
-    m.add_function(wrap_pyfunction!(runtime::runtime, m)?)?;
+    m.add_function(wrap_pyfunction!(engine::runtime, m)?)?;
 
     data_types::add_module(py, m)?;
     Ok(())
@@ -33,8 +33,8 @@ fn pysynapse(py: Python<'_>, m: &PyModule) -> PyResult<()> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("synapse runtime error")]
-    Runtime(#[from] synapse::runtime::Error),
+    #[error("synapse engine error")]
+    Engine(#[from] synapse::engine::Error),
     #[error("synapse tensor error")]
     Tensor(#[from] synapse::tensor::Error),
     #[error("no topic with id '{0}' (to create the topic pass a schema)")]
@@ -49,7 +49,7 @@ impl From<Error> for PyErr {
     fn from(err: Error) -> Self {
         use Error::*;
         match err {
-            Runtime(err) => err.into(),
+            Engine(err) => err.into(),
             Tensor(err) => err.into(),
             TopicNotFound(err) => PyLookupError::new_err(err),
             InvalidIndexMode(err) => PyValueError::new_err(err),

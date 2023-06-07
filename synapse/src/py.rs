@@ -6,8 +6,8 @@ impl From<crate::Error> for PyErr {
 
         match err {
             Tensor(err) => err.into(),
-            #[cfg(feature = "runtime")]
-            Runtime(err) => err.into(),
+            #[cfg(feature = "engine")]
+            Engine(err) => err.into(),
         }
     }
 }

@@ -1,10 +1,10 @@
 // mod bounded_stream;
 pub mod catalog;
 mod context;
+mod engine;
 mod path;
 #[cfg(feature = "pyo3")]
 mod py;
-mod runtime;
 pub mod schema;
 pub mod topic;
 pub(crate) mod util;
@@ -12,8 +12,8 @@ pub(crate) mod util;
 use std::{any::Any, fmt::Debug};
 
 pub use context::SynapseContext;
+pub use engine::{Engine, EngineConfig};
 pub use path::Path;
-pub use runtime::{Runtime, RuntimeConfig};
 pub use schema::{ArrowSchema, Schema};
 pub use topic::{Topic, TopicConfig};
 
