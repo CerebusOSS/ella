@@ -1,4 +1,4 @@
-use arrow::{pyarrow::PyArrowConvert, record_batch::RecordBatch};
+use arrow::{pyarrow::FromPyArrow, record_batch::RecordBatch};
 use pyo3::prelude::*;
 use std::sync::Arc;
 use synapse::runtime::{topic::Publisher, Topic};

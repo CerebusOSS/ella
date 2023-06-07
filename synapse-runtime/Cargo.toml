@@ -14,9 +14,11 @@ synapse-tensor = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt-multi-thread"] }
 futures = { workspace = true }
 derive_more = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 once_cell = { workspace = true }
+object_store = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
 
@@ -25,10 +27,9 @@ num-traits = "0.2.15"
 tokio-stream = { version = "0.1.12", features = ["sync"] }
 tokio-util = "0.7.7"
 dashmap = "5.4.0"
-serde = { version = "1.0.160", features = ["derive"] }
 tracing = "0.1.37"
 tracing-subscriber = "0.3.17"
-object_store = "0.5"
+
 url = { version = "2.3.1", features = ["serde"] }
 strum = { workspace = true }
 flume = "0.10.14"

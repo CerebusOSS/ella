@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::pyarrow::PyArrowConvert;
+use arrow::pyarrow::ToPyArrow;
 use pyo3::prelude::*;
 use synapse::{
     runtime::Schema,

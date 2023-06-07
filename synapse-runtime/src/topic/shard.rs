@@ -8,6 +8,7 @@ use datafusion::{
         file_format::{parquet::ParquetFormat, FileFormat},
         listing::PartitionedFile,
         object_store::ObjectStoreUrl,
+        physical_plan::FileScanConfig,
         TableProvider,
     },
     error::{DataFusionError, Result as DfResult},
@@ -16,7 +17,7 @@ use datafusion::{
     optimizer::utils::conjunction,
     parquet::{arrow::AsyncArrowWriter, file::properties::WriterProperties},
     physical_expr::create_physical_expr,
-    physical_plan::{file_format::FileScanConfig, project_schema, ExecutionPlan, Statistics},
+    physical_plan::{project_schema, ExecutionPlan, Statistics},
     prelude::Expr,
 };
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
