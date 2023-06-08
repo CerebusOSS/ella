@@ -1,5 +1,5 @@
 use crate::{
-    shape::IndexValue,
+    shape::{stride_offset, IndexValue},
     slice::{do_slice, AxisSliceSpec, Slice, Slicer},
     Axis, Const, Shape, Tensor, TensorValue,
 };
@@ -22,7 +22,7 @@ where
             &mut strides.slice_mut()[ax_idx],
             slice.into(),
         );
-        let values = self.values().offset(offset);
+        let values = self.values().offset_exact(offset);
         Tensor::new(values, shape, strides)
     }
 
@@ -31,8 +31,8 @@ where
         let index = index.abs_index(ax);
         let mut shape = self.shape().clone();
         shape.slice_mut()[ax] = 1;
-        let offset = index * self.strides()[ax];
-        let values = self.values().offset(offset);
+        let offset = stride_offset(index, self.strides()[ax]);
+        let values = self.values().offset_exact(offset);
         Tensor::new(values, shape, self.strides().clone())
     }
 

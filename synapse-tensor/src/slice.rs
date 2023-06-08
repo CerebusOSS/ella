@@ -3,7 +3,10 @@ use std::{
     ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive},
 };
 
-use crate::{shape::IndexValue, Dyn, Shape};
+use crate::{
+    shape::{stride_offset, IndexValue},
+    Dyn, Shape,
+};
 
 pub trait Slicer<S: Shape>: AsRef<[AxisSliceSpec]> {
     type Shape: Shape;
@@ -236,7 +239,7 @@ where
 //     type
 // }
 
-pub(crate) fn do_slice(axis: &mut usize, stride: &mut usize, slice: Slice) -> usize {
+pub(crate) fn do_slice(axis: &mut usize, stride: &mut usize, slice: Slice) -> isize {
     let (start, end, step) = to_abs_slice(*axis, slice);
 
     let m = end - start;
@@ -244,9 +247,9 @@ pub(crate) fn do_slice(axis: &mut usize, stride: &mut usize, slice: Slice) -> us
     let offset = if m == 0 {
         0
     } else if step < 0 {
-        (end - 1) * *stride
+        stride_offset(end - 1, *stride)
     } else {
-        start * *stride
+        stride_offset(start, *stride)
     };
 
     let abs_step = step.abs() as usize;

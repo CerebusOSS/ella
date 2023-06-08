@@ -1,30 +1,21 @@
-use std::borrow::Cow;
-
-use arrow::buffer::NullBuffer;
-
 use crate::{shape::ShapeIndexIter, Mask, Shape};
 
-pub enum ValidityIter<'a> {
+use super::MaskData;
+
+pub enum ValidityIter {
     Constant(usize, bool),
-    Values {
-        inner: Cow<'a, NullBuffer>,
-        index: usize,
-    },
+    Values { inner: MaskData, index: usize },
 }
 
-impl<'a> ValidityIter<'a> {
-    pub(crate) fn new(inner: Option<Cow<'a, NullBuffer>>, len: usize) -> Self {
-        if let Some(inner) = inner {
-            Self::as_constant(inner.as_ref()).unwrap_or_else(|| Self::Values { inner, index: 0 })
-        } else {
-            Self::Constant(len, true)
-        }
+impl ValidityIter {
+    pub(crate) fn new(inner: MaskData) -> Self {
+        Self::as_constant(&inner).unwrap_or_else(|| Self::Values { inner, index: 0 })
     }
 
-    fn as_constant(inner: &NullBuffer) -> Option<Self> {
-        if inner.null_count() == 0 {
+    fn as_constant(inner: &MaskData) -> Option<Self> {
+        if inner.num_masked() == 0 {
             Some(Self::Constant(inner.len(), true))
-        } else if inner.null_count() == inner.len() {
+        } else if inner.num_valid() == 0 {
             Some(Self::Constant(inner.len(), false))
         } else {
             None
@@ -32,7 +23,7 @@ impl<'a> ValidityIter<'a> {
     }
 }
 
-impl<'a> Iterator for ValidityIter<'a> {
+impl Iterator for ValidityIter {
     type Item = bool;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -47,7 +38,7 @@ impl<'a> Iterator for ValidityIter<'a> {
             }
             ValidityIter::Values { inner, index } => {
                 if *index < inner.len() {
-                    let value = inner.is_valid(*index);
+                    let value = inner.is_valid(*index as isize);
                     *index += 1;
                     Some(value)
                 } else {
@@ -62,7 +53,7 @@ impl<'a> Iterator for ValidityIter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for ValidityIter<'a> {
+impl ExactSizeIterator for ValidityIter {
     fn len(&self) -> usize {
         match self {
             ValidityIter::Constant(remaining, _) => *remaining,
@@ -71,20 +62,20 @@ impl<'a> ExactSizeIterator for ValidityIter<'a> {
     }
 }
 
-pub enum MaskIter<'a, S: Shape> {
-    Flat(ValidityIter<'a>),
+pub enum MaskIter<S: Shape> {
+    Flat(ValidityIter),
     Shaped {
-        inner: Mask<'a, S>,
+        inner: Mask<S>,
         shape: ShapeIndexIter<S>,
     },
 }
 
-impl<'a, S> MaskIter<'a, S>
+impl<'a, S> MaskIter<S>
 where
     S: Shape,
 {
-    pub(crate) fn new(inner: Mask<'a, S>) -> Self {
-        if inner.is_contiguous() {
+    pub(crate) fn new(inner: Mask<S>) -> Self {
+        if inner.is_standard_layout() {
             Self::Flat(inner.values.into_iter())
         } else {
             let shape = ShapeIndexIter::new(inner.shape().clone());
@@ -93,7 +84,7 @@ where
     }
 }
 
-impl<'a, S> Iterator for MaskIter<'a, S>
+impl<'a, S> Iterator for MaskIter<S>
 where
     S: Shape,
 {
@@ -117,7 +108,7 @@ where
     }
 }
 
-impl<'a, S> ExactSizeIterator for MaskIter<'a, S>
+impl<S> ExactSizeIterator for MaskIter<S>
 where
     S: Shape,
 {

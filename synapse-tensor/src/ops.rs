@@ -2,6 +2,7 @@ mod binary_arith;
 mod boolean;
 mod builtin_arith;
 mod cmp;
+mod combine;
 mod constructors;
 mod index;
 mod masked;

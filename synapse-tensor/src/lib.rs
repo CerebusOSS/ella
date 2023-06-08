@@ -30,8 +30,14 @@ pub enum Error {
     Dimensions { expected: usize, actual: usize },
     #[error("failed to convert shape {:?} to shape with {} dimensions", src.slice(), ndim)]
     Shape { src: Dyn, ndim: usize },
+    #[error("axis {0:?} out of bounds for tensor with {1} dimensions")]
+    AxisOutOfBounds(Axis, usize),
     #[error("shapes {0:?} and {1:?} cannot be broadcast together")]
     Broadcast(Dyn, Dyn),
+    #[error("empty list passed to operation that requires at least one tensor")]
+    EmptyList,
+    #[error("all tensors must have shared shape {0:?}")]
+    IncompatibleShape(Dyn),
     #[error("no column found for column name {0}")]
     ColumnLookup(String),
     #[error("failed to cast tensor of type {from:?} to type {to:?}")]

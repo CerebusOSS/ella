@@ -5,7 +5,6 @@ pub use index::{Flat, IndexValue, Indexer};
 pub use iter::ShapeIndexIter;
 pub use max::NdimMax;
 
-use index::offset_checked;
 use smallvec::SmallVec;
 use std::{fmt::Debug, ops::IndexMut};
 
@@ -102,37 +101,44 @@ pub trait Shape:
     }
 
     #[doc(hidden)]
-    fn stride_offset(index: &Self, strides: &Self) -> usize {
+    fn stride_offset(index: &Self, strides: &Self) -> isize {
         let mut offset = 0;
         for (&i, &s) in index.slice().iter().zip(strides.slice()) {
-            offset += i * s;
+            offset += stride_offset(i, s);
         }
         offset
     }
 
     #[doc(hidden)]
-    fn stride_offset_checked(&self, index: &Self, strides: &Self) -> Option<usize> {
+    fn stride_offset_checked(&self, index: &Self, strides: &Self) -> Option<isize> {
         let mut offset = 0;
         let iter = self.slice().iter().zip(index.slice()).zip(strides.slice());
         for ((&dim, &i), &s) in iter {
-            offset += offset_checked(dim, s, i)?;
+            offset += stride_offset_checked(dim, s, i)?;
         }
         Some(offset)
     }
 
     #[doc(hidden)]
-    fn is_contiguous(&self, strides: &Self) -> bool {
-        let defaults = self.default_strides();
-        if strides == &defaults {
-            return true;
+    fn is_standard_layout(&self, strides: &Self) -> bool {
+        if let Some(1) = Self::NDIM {
+            return strides[0] == 1 || self[0] <= 1;
         }
-        let shape = self.slice();
-        let mut cstride = 1;
-        for &i in strides.strides_sort_indices().slice() {
-            if shape[i] != 1 && strides[i] != cstride {
-                return false;
+
+        for &sz in self.slice() {
+            if sz == 0 {
+                return true;
             }
-            cstride *= shape[i];
+        }
+
+        let mut cstride = 1;
+        for (&ax, &stride) in self.slice().iter().zip(strides.slice()).rev() {
+            if ax != 1 {
+                if stride as isize != cstride {
+                    return false;
+                }
+                cstride *= ax as isize;
+            }
         }
         true
     }
@@ -172,17 +178,6 @@ pub trait Shape:
     fn set_last_elem(&mut self, i: usize) {
         let n = self.ndim();
         self.slice_mut()[n - 1] = i;
-    }
-
-    #[doc(hidden)]
-    fn strides_sort_indices(&self) -> Self {
-        let mut indices = self.clone();
-        for (i, s) in indices.slice_mut().iter_mut().enumerate() {
-            *s = i;
-        }
-        let strides = self.slice();
-        indices.slice_mut().sort_by_key(|&i| strides[i]);
-        indices
     }
 }
 
@@ -582,3 +577,16 @@ where
 // fn stride_offset_checked(shape: &[usize], index: ) -> Option<isize> {
 
 // }
+
+#[inline(always)]
+pub(crate) fn stride_offset(index: usize, stride: usize) -> isize {
+    (index as isize) * (stride as isize)
+}
+
+pub(crate) fn stride_offset_checked(dim: usize, stride: usize, index: usize) -> Option<isize> {
+    if index >= dim {
+        None
+    } else {
+        Some(stride_offset(index, stride))
+    }
+}

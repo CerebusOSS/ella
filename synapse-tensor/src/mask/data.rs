@@ -1,7 +1,4 @@
-use std::borrow::{Borrow, Cow};
-
 use arrow::{
-    array::BooleanArray,
     buffer::{BooleanBuffer, Buffer, NullBuffer},
     util::bit_util,
 };
@@ -9,159 +6,200 @@ use arrow::{
 use super::ValidityIter;
 
 #[derive(Debug, Clone)]
-pub struct MaskData<'a> {
-    values: Option<Cow<'a, NullBuffer>>,
+pub struct MaskData {
+    values: Option<NullBuffer>,
+    offset: usize,
     len: usize,
+    num_masked: usize,
 }
 
-impl From<NullBuffer> for MaskData<'static> {
+impl From<NullBuffer> for MaskData {
     fn from(value: NullBuffer) -> Self {
         let len = value.len();
-        Self::owned(value, len)
+        Self::new(value, 0, len)
     }
 }
 
-impl From<BooleanBuffer> for MaskData<'static> {
-    fn from(value: BooleanBuffer) -> Self {
-        let values = NullBuffer::new(value);
-        let len = values.len();
-        Self::owned(values, len)
-    }
-}
-
-impl From<BooleanArray> for MaskData<'static> {
-    fn from(value: BooleanArray) -> Self {
-        let values = NullBuffer::new(value.values().clone());
-        let len = values.len();
-        Self::owned(values, len)
-    }
-}
-
-impl<'a> From<&'a NullBuffer> for MaskData<'a> {
-    fn from(value: &'a NullBuffer) -> Self {
-        let len = value.len();
-        Self::borrowed(value, len)
-        // Self::owned(value, len)
-    }
-}
-
-impl From<&BooleanBuffer> for MaskData<'static> {
-    fn from(value: &BooleanBuffer) -> Self {
-        let values = NullBuffer::new(value.clone());
-        let len = values.len();
-        Self::owned(values, len)
-    }
-}
-
-impl From<&BooleanArray> for MaskData<'static> {
-    fn from(value: &BooleanArray) -> Self {
-        value.values().into()
-    }
-}
-
-impl MaskData<'static> {
-    pub fn owned<N>(values: N, len: usize) -> Self
+impl MaskData {
+    pub fn new<N>(values: N, offset: usize, len: usize) -> Self
     where
         N: Into<Option<NullBuffer>>,
     {
         let values: Option<NullBuffer> = values.into();
+        let num_masked = if let Some(values) = &values {
+            Self::count_masked(values, offset, offset + len)
+        } else {
+            0
+        };
         Self {
-            values: values.map(Cow::Owned),
+            values,
+            offset,
             len,
+            num_masked,
         }
     }
 }
 
-impl<'a> MaskData<'a> {
-    pub fn borrowed<N>(values: N, len: usize) -> Self
-    where
-        N: Into<Option<&'a NullBuffer>>,
-    {
-        let values: Option<&NullBuffer> = values.into();
-        Self {
-            values: values.map(Cow::Borrowed),
-            len,
-        }
-    }
-
+impl MaskData {
     pub fn len(&self) -> usize {
         self.len
     }
 
     pub fn into_values(self) -> Option<NullBuffer> {
-        self.values.map(|v| v.into_owned())
-    }
-
-    pub fn values(&self) -> Option<&NullBuffer> {
-        self.values.as_ref().map(|v| v.borrow())
+        self.shrink_to_fit().values
     }
 
     pub fn num_masked(&self) -> usize {
-        self.values().map_or(0, |n| n.null_count())
+        self.num_masked
     }
 
     pub fn num_valid(&self) -> usize {
         self.len - self.num_masked()
     }
 
-    pub fn is_valid(&self, i: usize) -> bool {
+    pub fn is_valid(&self, i: isize) -> bool {
+        let i = i + self.offset as isize;
+        debug_assert!(i >= 0);
         if let Some(values) = self.values.as_ref() {
-            values.is_valid(i)
+            values.is_valid(i as usize)
         } else {
             true
         }
     }
 
-    pub fn slice(&self, offset: usize, length: usize) -> MaskData<'static> {
-        if let Some(values) = self.values() {
+    pub fn slice_exact(&self, offset: isize, length: usize) -> Self {
+        debug_assert!(self.offset as isize + offset >= 0);
+        let offset = (self.offset as isize + offset) as usize;
+
+        if let Some(values) = &self.values {
+            debug_assert!(length + offset <= values.len());
             let values = values.slice(offset, length);
-            MaskData {
-                values: Some(Cow::Owned(values)),
+            let num_masked = values.null_count();
+            Self {
+                values: Some(values),
+                offset,
                 len: length,
+                num_masked,
             }
         } else {
-            MaskData {
+            Self {
                 values: None,
+                offset: 0,
                 len: length,
+                num_masked: 0,
             }
         }
     }
 
-    pub fn offset(&self, offset: usize) -> MaskData<'static> {
-        self.slice(offset, self.len() - offset)
+    pub fn slice(&self, offset: isize, length: usize) -> Self {
+        debug_assert!(self.offset as isize + offset >= 0);
+        let offset_diff = offset;
+        let offset = (self.offset as isize + offset) as usize;
+
+        if let Some(values) = &self.values {
+            debug_assert!(length + offset <= values.len());
+            let mut num_masked = self.num_masked;
+            if offset_diff < 0 {
+                num_masked += Self::count_masked(values, offset, self.offset)
+            } else if offset_diff > 0 {
+                num_masked -= Self::count_masked(values, self.offset, offset)
+            }
+            let old_end = self.offset + self.len;
+            let new_end = offset + length;
+            if new_end > old_end {
+                num_masked += Self::count_masked(values, old_end, new_end);
+            } else if new_end < old_end {
+                num_masked += Self::count_masked(values, new_end, old_end);
+            }
+
+            Self {
+                values: Some(values.clone()),
+                offset,
+                len: length,
+                num_masked,
+            }
+        } else {
+            Self {
+                values: None,
+                offset: 0,
+                len: length,
+                num_masked: 0,
+            }
+        }
+    }
+
+    pub fn offset_exact(&self, offset: isize) -> Self {
+        self.slice_exact(offset, (self.len as isize - offset) as usize)
+    }
+
+    pub fn offset(&self, offset: isize) -> Self {
+        self.slice(offset, (self.len as isize - offset) as usize)
     }
 
     pub fn all(&self) -> bool {
-        self.values.as_ref().map_or(true, |v| v.null_count() == 0)
+        self.num_masked == 0
     }
 
     pub fn any(&self) -> bool {
-        self.values
-            .as_ref()
-            .map_or(true, |v| v.null_count() < v.len())
+        self.num_masked < self.len
     }
 
     #[allow(dead_code)]
-    pub fn iter(&self) -> ValidityIter<'_> {
-        ValidityIter::new(self.values.clone(), self.len)
+    pub fn iter(&self) -> ValidityIter {
+        ValidityIter::new(self.clone())
+    }
+
+    fn count_masked(buffer: &NullBuffer, start: usize, end: usize) -> usize {
+        if start == 0 && end == buffer.len() {
+            buffer.null_count()
+        } else if buffer.null_count() == buffer.len() {
+            end - start
+        } else if buffer.null_count() == 0 {
+            0
+        } else {
+            let mut count = 0;
+            for i in start..end {
+                if buffer.is_null(i) {
+                    count += 1;
+                }
+            }
+            count
+        }
     }
 
     pub fn to_buffer(self) -> BooleanBuffer {
         if let Some(values) = self.values {
-            values.into_owned().into_inner()
+            values.inner().slice(self.offset, self.len)
         } else {
             let num_bytes = bit_util::ceil(self.len, 8);
             let values = Buffer::from(vec![0xFF; num_bytes]);
             BooleanBuffer::new(values, 0, self.len)
         }
     }
+
+    pub fn shrink_to_fit(self) -> Self {
+        if self.offset != 0 || self.len != self.values.as_ref().map_or(self.len, |v| v.len()) {
+            self.slice_exact(0, self.len)
+        } else {
+            self
+        }
+    }
 }
 
-impl<'a> IntoIterator for MaskData<'a> {
+impl IntoIterator for MaskData {
     type Item = bool;
-    type IntoIter = ValidityIter<'a>;
+    type IntoIter = ValidityIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        ValidityIter::new(self.values, self.len)
+        ValidityIter::new(self)
+    }
+}
+
+impl IntoIterator for &MaskData {
+    type Item = bool;
+    type IntoIter = ValidityIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }

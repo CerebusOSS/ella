@@ -1,4 +1,7 @@
-use crate::{shape::NdimMax, Axis, Const, Dyn, IntoShape, RemoveAxis, Shape, Tensor, TensorValue};
+use crate::{
+    shape::{stride_offset, NdimMax},
+    Axis, Const, Dyn, IntoShape, RemoveAxis, Shape, Tensor, TensorValue,
+};
 
 impl<T, S> Tensor<T, S>
 where
@@ -21,7 +24,7 @@ where
         let strides = shape.default_strides();
         assert_eq!(self.shape().size(), shape.size());
 
-        let values = self.clone().make_contiguous().into_values();
+        let values = self.clone().to_standard_layout().into_values();
 
         Tensor::new(values, shape, strides)
     }
@@ -130,6 +133,22 @@ where
         }?;
         Ok((t1, t2))
     }
+
+    pub fn invert_axis<A: Into<Axis>>(&self, axis: A) -> Self {
+        let axis: Axis = axis.into();
+        let ax = axis.index(self.shape());
+        let stride = self.strides()[ax] as isize;
+        let size = self.shape()[ax];
+        let values = if size != 0 {
+            self.values()
+                .offset(stride_offset(size - 1, stride as usize))
+        } else {
+            self.values().clone()
+        };
+        let mut strides = self.strides().clone();
+        strides[ax] = (-stride) as usize;
+        Tensor::new(values, self.shape().clone(), strides)
+    }
 }
 
 /// > 1-D shape operations
@@ -155,5 +174,27 @@ where
 {
     pub fn t(&self) -> Self {
         self.swap_axes(0, 1)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_invert_axis() {
+        let x = crate::tensor![[1, 2, 3], [4, 5, 6],];
+        let ax0_inv = crate::tensor![[4, 5, 6], [1, 2, 3]];
+        let ax1_inv = crate::tensor![[3, 2, 1], [6, 5, 4]];
+        assert!(
+            x.invert_axis(0).eq(&ax0_inv).all(),
+            "{:?} != {:?}",
+            x,
+            ax0_inv
+        );
+        assert!(
+            x.invert_axis(1).eq(&ax1_inv).all(),
+            "{:?} != {:?}",
+            x,
+            ax1_inv
+        );
     }
 }

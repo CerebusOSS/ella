@@ -1,11 +1,9 @@
-// use crate::tensor::{types::SynapseIntType, TensorValueIter};
-
-use super::{Const, Dyn, Shape};
+use super::{stride_offset, stride_offset_checked, Const, Dyn, Shape};
 use std::fmt::Debug;
 
 pub trait Indexer<S: Shape>: Debug {
-    fn index_checked(&self, shape: &S, strides: &S) -> Option<usize>;
-    fn index_unchecked(&self, shape: &S, strides: &S) -> usize;
+    fn index_checked(&self, shape: &S, strides: &S) -> Option<isize>;
+    fn index_unchecked(&self, shape: &S, strides: &S) -> isize;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -15,7 +13,7 @@ impl<S> Indexer<S> for Flat
 where
     S: Shape,
 {
-    fn index_checked(&self, shape: &S, strides: &S) -> Option<usize> {
+    fn index_checked(&self, shape: &S, strides: &S) -> Option<isize> {
         if self.0 < shape.size() {
             Some(self.index_unchecked(shape, strides))
         } else {
@@ -23,9 +21,9 @@ where
         }
     }
 
-    fn index_unchecked(&self, shape: &S, strides: &S) -> usize {
-        if shape.is_contiguous(strides) {
-            self.0
+    fn index_unchecked(&self, shape: &S, strides: &S) -> isize {
+        if shape.is_standard_layout(strides) {
+            self.0 as isize
         } else {
             let mut idx = 0;
             let mut remaining = self.0;
@@ -38,7 +36,7 @@ where
             for (count, &stride) in iter {
                 let take = remaining / count;
                 remaining -= take;
-                idx += take * stride;
+                idx += stride_offset(take, stride);
                 if remaining == 0 {
                     break;
                 }
@@ -53,12 +51,12 @@ where
     I: IndexValue,
 {
     #[inline]
-    fn index_checked(&self, shape: &Const<1>, strides: &Const<1>) -> Option<usize> {
+    fn index_checked(&self, shape: &Const<1>, strides: &Const<1>) -> Option<isize> {
         [*self].index_checked(shape, strides)
     }
 
     #[inline]
-    fn index_unchecked(&self, shape: &Const<1>, strides: &Const<1>) -> usize {
+    fn index_unchecked(&self, shape: &Const<1>, strides: &Const<1>) -> isize {
         [*self].index_unchecked(shape, strides)
     }
 }
@@ -68,12 +66,12 @@ where
     S: Shape,
 {
     #[inline]
-    fn index_checked(&self, shape: &S, strides: &S) -> Option<usize> {
+    fn index_checked(&self, shape: &S, strides: &S) -> Option<isize> {
         shape.stride_offset_checked(self, strides)
     }
 
     #[inline]
-    fn index_unchecked(&self, _shape: &S, strides: &S) -> usize {
+    fn index_unchecked(&self, _shape: &S, strides: &S) -> isize {
         S::stride_offset(self, strides)
     }
 }
@@ -86,16 +84,16 @@ macro_rules! impl_indexer_array {
             where I: IndexValue,
         {
             #[inline]
-            fn index_checked(&self, shape: &Const<$n>, strides: &Const<$n>) -> Option<usize> {
+            fn index_checked(&self, shape: &Const<$n>, strides: &Const<$n>) -> Option<isize> {
                 if self.len() != shape.ndim() {
                     return None
                 }
-                Some($(offset_checked(shape[$index], strides[$index], self[$index].abs_index(shape[$index]))? + )* 0)
+                Some($(stride_offset_checked(shape[$index], strides[$index], self[$index].abs_index(shape[$index]))? + )* 0)
             }
 
             #[inline]
-            fn index_unchecked(&self, shape: &Const<$n>, strides: &Const<$n>) -> usize {
-                $(self[$index].abs_index(shape[$index]) * strides[$index] + )* 0
+            fn index_unchecked(&self, shape: &Const<$n>, strides: &Const<$n>) -> isize {
+                $(stride_offset(self[$index].abs_index(shape[$index]), strides[$index]) + )* 0
             }
         }
 
@@ -104,18 +102,18 @@ macro_rules! impl_indexer_array {
             where I: IndexValue,
         {
             #[inline]
-            fn index_checked(&self, shape: &Dyn, strides: &Dyn) -> Option<usize> {
+            fn index_checked(&self, shape: &Dyn, strides: &Dyn) -> Option<isize> {
                 debug_assert_eq!(strides.ndim(), $n, "index {:?} doesn't match array with {} dimensions", self, strides.ndim());
                 if self.len() != shape.ndim() {
                     return None
                 }
-                Some($(offset_checked(shape[$index], strides[$index], self[$index].abs_index(shape[$index]))? + )* 0)
+                Some($(stride_offset_checked(shape[$index], strides[$index], self[$index].abs_index(shape[$index]))? + )* 0)
             }
 
             #[inline]
-            fn index_unchecked(&self, shape: &Dyn, strides: &Dyn) -> usize {
+            fn index_unchecked(&self, shape: &Dyn, strides: &Dyn) -> isize {
                 debug_assert_eq!(strides.ndim(), $n, "index {:?} doesn't match array with {} dimensions", self, strides.ndim());
-                $(self[$index].abs_index(shape[$index]) * strides[$index] + )* 0
+                $(stride_offset(self[$index].abs_index(shape[$index]), strides[$index]) + )* 0
             }
         }
         )+
@@ -140,12 +138,12 @@ macro_rules! impl_tuple_index {
             where $($t: IndexValue),*
         {
             #[inline]
-            fn index_checked(&self, shape: &Const<$n>, strides: &Const<$n>) -> Option<usize> {
+            fn index_checked(&self, shape: &Const<$n>, strides: &Const<$n>) -> Option<isize> {
                 let ($($t, )*) = *self;
                 <[isize; $n] as Indexer<Const<$n>>>::index_checked(&[$($t.index(), )*], shape, strides)
             }
             #[inline]
-            fn index_unchecked(&self, shape: &Const<$n>, strides: &Const<$n>) -> usize {
+            fn index_unchecked(&self, shape: &Const<$n>, strides: &Const<$n>) -> isize {
                 let ($($t, )*) = *self;
                 <[isize; $n] as Indexer<Const<$n>>>::index_unchecked(&[$($t.index(), )*], shape, strides)
             }
@@ -156,12 +154,12 @@ macro_rules! impl_tuple_index {
             where $($t: IndexValue),*
         {
             #[inline]
-            fn index_checked(&self, shape: &Dyn, strides: &Dyn) -> Option<usize> {
+            fn index_checked(&self, shape: &Dyn, strides: &Dyn) -> Option<isize> {
                 let ($($t, )*) = *self;
                 <[isize; $n] as Indexer<Dyn>>::index_checked(&[$($t.index(), )*], shape, strides)
             }
             #[inline]
-            fn index_unchecked(&self, shape: &Dyn, strides: &Dyn) -> usize {
+            fn index_unchecked(&self, shape: &Dyn, strides: &Dyn) -> isize {
                 let ($($t, )*) = *self;
                 <[isize; $n] as Indexer<Dyn>>::index_unchecked(&[$($t.index(), )*], shape, strides)
             }
@@ -317,11 +315,3 @@ impl_index_value!(unsigned [u32 u64 usize]);
 //         self
 //     }
 // }
-
-pub(crate) fn offset_checked(dim: usize, stride: usize, index: usize) -> Option<usize> {
-    if index >= dim {
-        None
-    } else {
-        Some(index * stride)
-    }
-}

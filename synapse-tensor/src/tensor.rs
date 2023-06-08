@@ -3,9 +3,10 @@ mod fmt;
 mod iter;
 
 pub use data::TensorData;
+pub(crate) use iter::ShapedIter;
 pub use iter::TensorIter;
 
-use crate::{mask::MaskData, Const, Dyn, Mask, Shape, TensorValue};
+use crate::{Const, Dyn, Mask, Shape, TensorValue};
 
 pub type Tensor1<T> = Tensor<T, Const<1>>;
 pub type Tensor2<T> = Tensor<T, Const<2>>;
@@ -45,8 +46,8 @@ where
         self.shape.ndim()
     }
 
-    pub fn is_contiguous(&self) -> bool {
-        self.shape.is_contiguous(&self.strides)
+    pub fn is_standard_layout(&self) -> bool {
+        self.shape.is_standard_layout(&self.strides)
     }
 
     #[inline]
@@ -59,14 +60,6 @@ where
         self.values
     }
 
-    // pub(crate) fn shape_mut(&mut self) -> &mut S {
-    //     &mut self.shape
-    // }
-
-    // pub(crate) fn strides_mut(&mut self) -> &mut S {
-    //     &mut self.strides
-    // }
-
     pub(crate) fn new<A>(values: A, shape: S, strides: S) -> Self
     where
         A: Into<TensorData<T, T::Array>>,
@@ -78,8 +71,8 @@ where
         }
     }
 
-    pub fn make_contiguous(mut self) -> Self {
-        if self.is_contiguous() {
+    pub fn to_standard_layout(mut self) -> Self {
+        if self.is_standard_layout() {
             self
         } else {
             self.values = unsafe { T::from_trusted_len_iter(self.iter()).into() };
@@ -87,11 +80,11 @@ where
         }
     }
 
-    pub(crate) fn mask_inner(&self) -> Mask<'_, S> {
-        Mask::borrowed(
-            MaskData::borrowed(self.values.nulls(), self.values.len()),
-            self.shape(),
-            self.strides(),
+    pub(crate) fn mask_inner(&self) -> Mask<S> {
+        Mask::new(
+            self.values.mask(),
+            self.shape().clone(),
+            self.strides().clone(),
         )
     }
 

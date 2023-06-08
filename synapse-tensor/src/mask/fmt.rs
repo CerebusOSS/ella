@@ -4,7 +4,7 @@ use crate::{
 };
 use std::fmt;
 
-impl<'a, S> fmt::Debug for Mask<'a, S>
+impl<S> fmt::Debug for Mask<S>
 where
     S: Shape,
 {

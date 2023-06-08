@@ -94,7 +94,7 @@ where
     }
 
     fn data(&self) -> ArrayRef {
-        self.values().values().clone()
+        self.values().clone().into_values()
     }
 }
 
@@ -148,7 +148,7 @@ pub(crate) fn column_to_field(col: &Column) -> Field {
 pub(crate) fn column_to_array(col: &Column) -> ArrayRef {
     let field = column_to_field(col);
 
-    if !col.shape().is_contiguous(&col.strides()) {
+    if !col.shape().is_standard_layout(&col.strides()) {
         todo!()
     }
 

@@ -2,12 +2,10 @@ mod data;
 mod fmt;
 mod iter;
 
-use std::borrow::Cow;
-
 use arrow::array::BooleanArray;
 
 use crate::{
-    shape::{IndexValue, Indexer},
+    shape::{stride_offset, IndexValue, Indexer},
     Axis, Dyn, RemoveAxis, Shape, Tensor,
 };
 
@@ -15,67 +13,56 @@ pub(crate) use self::data::MaskData;
 pub use self::iter::{MaskIter, ValidityIter};
 
 #[derive(Clone)]
-pub struct Mask<'a, S: Shape> {
-    values: MaskData<'a>,
-    shape: Cow<'a, S>,
-    strides: Cow<'a, S>,
+pub struct Mask<S: Shape> {
+    values: MaskData,
+    shape: S,
+    strides: S,
 }
 
-impl<S: Shape> From<&Tensor<bool, S>> for Mask<'static, S> {
+impl<S: Shape> From<&Tensor<bool, S>> for Mask<S> {
     fn from(t: &Tensor<bool, S>) -> Self {
-        Mask::owned(
-            MaskData::from(t.values().values().as_ref()),
+        Mask::new(
+            t.values().to_mask_data(),
             t.shape().clone(),
             t.strides().clone(),
         )
     }
 }
 
-impl<S: Shape> From<Tensor<bool, S>> for Mask<'static, S> {
+impl<S: Shape> From<Tensor<bool, S>> for Mask<S> {
     fn from(t: Tensor<bool, S>) -> Self {
         (&t).into()
     }
 }
 
-impl<'a, S: Shape> From<Mask<'a, S>> for Tensor<bool, S> {
-    fn from(m: Mask<'a, S>) -> Self {
+impl<'a, S: Shape> From<Mask<S>> for Tensor<bool, S> {
+    fn from(m: Mask<S>) -> Self {
         Tensor::new(
             BooleanArray::new(m.values.to_buffer(), None),
-            m.shape.into_owned(),
-            m.strides.into_owned(),
+            m.shape.clone(),
+            m.strides.clone(),
         )
     }
 }
 
-impl<'a, S: Shape> Mask<'a, S> {
-    pub(crate) fn owned<D>(values: D, shape: S, strides: S) -> Self
+impl<'a, S: Shape> Mask<S> {
+    pub(crate) fn new<D>(values: D, shape: S, strides: S) -> Self
     where
-        D: Into<MaskData<'a>>,
+        D: Into<MaskData>,
     {
         Self {
             values: values.into(),
-            shape: Cow::Owned(shape),
-            strides: Cow::Owned(strides),
-        }
-    }
-
-    pub(crate) fn borrowed<D>(values: D, shape: &'a S, strides: &'a S) -> Self
-    where
-        D: Into<MaskData<'a>>,
-    {
-        Self {
-            values: values.into(),
-            shape: Cow::Borrowed(shape),
-            strides: Cow::Borrowed(strides),
+            shape,
+            strides,
         }
     }
 
     pub fn shape(&self) -> &S {
-        self.shape.as_ref()
+        &self.shape
     }
 
     pub fn strides(&self) -> &S {
-        self.strides.as_ref()
+        &self.strides
     }
 
     pub fn ndim(&self) -> usize {
@@ -86,15 +73,15 @@ impl<'a, S: Shape> Mask<'a, S> {
         self.shape.size()
     }
 
-    pub fn as_dyn(&self) -> Mask<'a, Dyn> {
-        Mask {
-            values: self.values.clone(),
-            shape: Cow::Owned(self.shape.as_dyn()),
-            strides: Cow::Owned(self.strides.as_dyn()),
-        }
+    pub fn as_dyn(&self) -> Mask<Dyn> {
+        Mask::new(
+            self.values.clone(),
+            self.shape.as_dyn(),
+            self.strides.as_dyn(),
+        )
     }
 
-    pub fn iter(&self) -> MaskIter<'_, S> {
+    pub fn iter(&self) -> MaskIter<S> {
         MaskIter::new(self.clone())
     }
 
@@ -109,8 +96,8 @@ impl<'a, S: Shape> Mask<'a, S> {
         self.values.is_valid(idx)
     }
 
-    pub fn is_contiguous(&self) -> bool {
-        self.shape.is_contiguous(&self.strides)
+    pub fn is_standard_layout(&self) -> bool {
+        self.shape.is_standard_layout(&self.strides)
     }
 
     #[inline]
@@ -128,7 +115,7 @@ impl<'a, S: Shape> Mask<'a, S> {
         !self.any()
     }
 
-    pub(crate) fn into_values(self) -> MaskData<'a> {
+    pub(crate) fn into_values(self) -> MaskData {
         self.values
     }
 
@@ -137,7 +124,7 @@ impl<'a, S: Shape> Mask<'a, S> {
             Some(self.size())
         } else if self.none() {
             Some(0)
-        } else if self.is_contiguous() {
+        } else if self.is_standard_layout() {
             Some(self.values.num_valid())
         } else {
             None
@@ -145,27 +132,27 @@ impl<'a, S: Shape> Mask<'a, S> {
     }
 }
 
-impl<'a, S> Mask<'a, S>
+impl<S> Mask<S>
 where
     S: Shape + RemoveAxis,
 {
-    pub fn index_axis<I: IndexValue>(&self, axis: Axis, index: I) -> Mask<'a, S::Smaller> {
+    pub fn index_axis<I: IndexValue>(&self, axis: Axis, index: I) -> Mask<S::Smaller> {
         let ax = axis.index(self.shape());
         let index = index.abs_index(ax);
-        let offset = index * self.strides[ax];
+        let offset = stride_offset(index, self.strides[ax]);
         let shape = self.shape().remove_axis(axis);
         let strides = self.strides().remove_axis(axis);
         let values = self.values.offset(offset);
-        Mask::owned(values, shape, strides)
+        Mask::new(values, shape, strides)
     }
 }
 
-impl<'a, S> IntoIterator for Mask<'a, S>
+impl<S> IntoIterator for Mask<S>
 where
     S: Shape,
 {
     type Item = bool;
-    type IntoIter = MaskIter<'a, S>;
+    type IntoIter = MaskIter<S>;
 
     fn into_iter(self) -> Self::IntoIter {
         MaskIter::new(self)

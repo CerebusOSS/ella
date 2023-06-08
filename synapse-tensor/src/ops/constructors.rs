@@ -125,9 +125,7 @@ where
         let strides = shape.default_strides();
         let values = unsafe {
             T::from_trusted_len_iter(
-                value
-                    .into_iter()
-                    .flat_map(|inner| inner.into_iter().flatten()),
+                value.into_iter().flatten().flatten(), // .flat_map(|inner| inner.into_iter().flatten()),
             )
         };
         Tensor::new(values, shape, strides)
