@@ -101,6 +101,31 @@ impl DeleteShard {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CompactShards {
+    pub uuid: TransactionId,
+    pub topic: TopicId,
+    pub src: Vec<ShardId>,
+    pub dst: ShardId,
+    pub schema: Schema,
+    pub path: Path,
+}
+
+impl CompactShards {
+    pub fn new(topic: TopicId, src: Vec<ShardId>, schema: Schema, root: &Path) -> Self {
+        let dst = ShardId::generate_from(src.first().expect("cannot compact empty shard list"));
+        let path = dst.encode_path(&root, "parquet");
+        Self {
+            uuid: TransactionId::new(),
+            topic,
+            src,
+            dst,
+            schema,
+            path,
+        }
+    }
+}
+
 #[derive(
     Debug,
     Clone,
@@ -118,6 +143,7 @@ pub enum Transaction {
     CreateShard(CreateShard),
     CloseShard(CloseShard),
     DeleteShard(DeleteShard),
+    CompactShards(CompactShards),
 }
 
 impl Transaction {
@@ -128,6 +154,7 @@ impl Transaction {
             CreateShard(t) => t.uuid,
             CloseShard(t) => t.uuid,
             DeleteShard(t) => t.uuid,
+            CompactShards(t) => t.uuid,
         }
     }
 

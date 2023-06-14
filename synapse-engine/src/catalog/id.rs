@@ -69,6 +69,14 @@ impl_uuid_newtype!(
     [ShardId]
 );
 
+impl ShardId {
+    pub(crate) fn generate_from(id: &Self) -> Self {
+        Self(Uuid::new_v7(
+            id.0.get_timestamp().expect("expected v7 UUID"),
+        ))
+    }
+}
+
 fn encode_uuid_to_path(uuid: Uuid, root: &Path, prefix: Option<&str>, ext: &str) -> Path {
     let mut buf = Uuid::encode_buffer();
     let id = uuid.hyphenated().encode_lower(&mut buf);

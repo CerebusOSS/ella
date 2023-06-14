@@ -6,7 +6,7 @@ use synapse_time::Duration;
 use crate::{
     catalog::{Catalog, TopicId},
     topic::{Topic, TopicConfig},
-    util::instrument::LoadMonitor,
+    util::{instrument::LoadMonitor, Maintainer},
     Schema, SynapseContext,
 };
 
@@ -15,6 +15,7 @@ pub struct EngineConfig {
     default_topic_config: TopicConfig,
     topic_config_overrides: HashMap<TopicId, TopicConfig>,
     log_load_metrics: Option<Duration>,
+    maintenance_interval: Duration,
 }
 
 impl Default for EngineConfig {
@@ -23,6 +24,7 @@ impl Default for EngineConfig {
             default_topic_config: TopicConfig::default(),
             topic_config_overrides: HashMap::new(),
             log_load_metrics: None,
+            maintenance_interval: Duration::seconds(30),
         }
     }
 }
@@ -34,6 +36,11 @@ impl EngineConfig {
 
     pub fn with_log_load_metrics(mut self, rate: Duration) -> Self {
         self.log_load_metrics = Some(rate);
+        self
+    }
+
+    pub fn with_maintenance_interval(mut self, interval: Duration) -> Self {
+        self.maintenance_interval = interval;
         self
     }
 
@@ -65,6 +72,7 @@ pub struct Engine {
     ctx: Arc<SynapseContext>,
     catalog: Arc<Catalog>,
     load_monitor: Arc<Option<LoadMonitor>>,
+    maintainer: Arc<Maintainer>,
 }
 
 impl Engine {
@@ -84,14 +92,21 @@ impl Engine {
 
         let session = SessionContext::with_config(df_cfg);
         let env = session.runtime_env();
-        let ctx = Arc::new(SynapseContext::new(root, session, config, &env)?);
+        let ctx = Arc::new(SynapseContext::new(root, session, config.clone(), &env)?);
         let catalog = Catalog::open(ctx.clone()).await?;
         ctx.session()
             .register_catalog(Catalog::CATALOG_ID, catalog.clone().catalog_provider());
+
+        let maintainer = Arc::new(Maintainer::new(
+            catalog.clone(),
+            ctx.clone(),
+            config.maintenance_interval,
+        ));
         Ok(Self {
             ctx,
             catalog,
             load_monitor,
+            maintainer,
         })
     }
 
@@ -130,7 +145,6 @@ impl Engine {
         )
         .await;
 
-        self.ctx.log().create_snapshot().await?;
         let mut out = Ok(());
         for (topic, res) in results {
             if let Err(error) = res {
@@ -138,6 +152,9 @@ impl Engine {
                 out = Err(error);
             }
         }
+        self.maintainer.stop().await;
+        self.ctx.log().create_snapshot().await?;
+
         if let Some(monitor) = self.load_monitor.as_ref() {
             monitor.stop();
         }

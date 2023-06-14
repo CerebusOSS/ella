@@ -6,6 +6,7 @@ mod shard;
 pub use channel::{Publisher, Subscriber, TopicChannel};
 pub use config::TopicConfig;
 pub use rw::RwBuffer;
+pub(crate) use shard::compact_shards;
 pub use shard::ShardManager;
 
 use std::sync::Arc;
@@ -25,6 +26,8 @@ use crate::{
     catalog::{snapshot::TopicState, transactions::CreateTopic, TopicId},
     Path, Schema, SynapseContext,
 };
+
+use self::shard::ShardSet;
 
 #[derive(Debug)]
 pub struct Topic {
@@ -91,6 +94,10 @@ impl Topic {
         &self.id
     }
 
+    pub fn schema(&self) -> &Arc<Schema> {
+        &self.schema
+    }
+
     pub fn config(&self) -> &TopicConfig {
         &self.config
     }
@@ -102,6 +109,10 @@ impl Topic {
     pub async fn close(&self) -> crate::Result<()> {
         self.rw.close().await;
         self.shards.close().await
+    }
+
+    pub(crate) fn shards(&self) -> &Arc<ShardSet> {
+        self.shards.shards()
     }
 }
 

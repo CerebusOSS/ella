@@ -1,3 +1,10 @@
+mod compact;
+mod writer;
+
+pub(crate) use compact::compact_shards;
+
+use writer::{ShardWriterWorker, WriteJob};
+
 use std::{collections::BTreeMap, sync::Arc};
 
 use arrow_schema::SchemaRef;
@@ -15,14 +22,12 @@ use datafusion::{
     execution::context::SessionState,
     logical_expr::TableType,
     optimizer::utils::conjunction,
-    parquet::{arrow::AsyncArrowWriter, file::properties::WriterProperties},
     physical_expr::create_physical_expr,
     physical_plan::{project_schema, ExecutionPlan, Statistics},
     prelude::Expr,
 };
-use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
+use futures::FutureExt;
 use tokio::{
-    io::AsyncWrite,
     sync::{oneshot, Mutex, Notify, RwLock},
     task::JoinHandle,
 };
@@ -30,13 +35,10 @@ use tokio::{
 use crate::{
     catalog::{
         snapshot::{ShardState, TopicState},
-        transactions::{CloseShard, CreateShard, DeleteShard},
+        transactions::{CloseShard, CompactShards, CreateShard, DeleteShard},
         ShardId, TopicId,
     },
-    util::{
-        instrument::Instrument,
-        parquet::{cast_batch, cast_batch_plan},
-    },
+    util::{instrument::Instrument, parquet::cast_batch_plan},
     Path, Schema, SynapseContext,
 };
 
@@ -56,6 +58,7 @@ impl ShardSet {
         let path = state.path.clone();
         let mut shards = BTreeMap::new();
         for shard in &state.shards {
+            println!("{:?}", shard.path);
             shards.insert(shard.id, shard.clone());
         }
 
@@ -114,6 +117,58 @@ impl ShardSet {
             .cloned()
             .collect::<Vec<_>>()
     }
+
+    pub async fn all_shards(&self) -> Vec<ShardState> {
+        self.shards
+            .read()
+            .await
+            .values()
+            .cloned()
+            .collect::<Vec<_>>()
+    }
+
+    pub async fn start_compact(
+        &self,
+        src: Vec<ShardId>,
+        schema: Schema,
+    ) -> crate::Result<ShardState> {
+        let mut shards = self.shards.write().await;
+        let tsn = CompactShards::new(self.topic.clone(), src, schema, &self.path);
+        tracing::debug!(topic=%self.topic, src=?tsn.src, dst=%tsn.dst, "compacting shards");
+        self.ctx.log().commit(tsn.clone()).await?;
+        let shard = ShardState::from(tsn);
+        shards.insert(shard.id, shard.clone());
+        Ok(shard)
+    }
+
+    pub async fn finish_compact(
+        &self,
+        src: Vec<ShardId>,
+        dst: ShardId,
+        rows: usize,
+    ) -> crate::Result<()> {
+        let mut shards = self.shards.write().await;
+        let tsn = CloseShard::new(self.topic.clone(), dst, rows);
+        self.ctx.log().commit(tsn).await?;
+
+        if let Some(shard) = shards.get_mut(&dst) {
+            shard.rows = Some(rows);
+        }
+
+        for &shard in &src {
+            let tsn = DeleteShard::new(self.topic.clone(), shard);
+            self.ctx.log().commit(tsn).await?;
+            shards.remove(&shard);
+        }
+        tracing::debug!(
+            topic=%self.topic,
+            src=?src,
+            dst=%dst,
+            rows=rows,
+            "finished compacting shards"
+        );
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -141,15 +196,15 @@ impl ShardManager {
         let (input, output) = flume::bounded(config.queue_size);
         let input = Instrument::new(input, &format!("{}.shard.manager", topic));
         let stop = Arc::new(Notify::new());
-        let worker = ShardWriterWorker {
-            schema: schema.clone(),
-            topic: topic.clone(),
-            ctx: ctx.clone(),
-            stop: stop.clone(),
-            config,
-            shards: shards.clone(),
-            recv: output,
-        };
+        let worker = ShardWriterWorker::new(
+            schema.clone(),
+            topic.clone(),
+            ctx.clone(),
+            stop.clone(),
+            config.clone(),
+            shards.clone(),
+            output,
+        );
         let handle = Mutex::new(Some(tokio::spawn(worker.run())));
 
         Self {
@@ -170,7 +225,7 @@ impl ShardManager {
 
     pub fn write(&self, values: Vec<RecordBatch>) -> crate::Result<oneshot::Receiver<()>> {
         let (done, out) = oneshot::channel();
-        let job = WriteJob { done, values };
+        let job = WriteJob::new(values, done);
         if let Err(_error) = self.input.try_send(job) {
             let mut handle = tokio::task::block_in_place(|| self.handle.blocking_lock());
             if let Some(h) = handle.as_mut() {
@@ -209,6 +264,10 @@ impl ShardManager {
         } else {
             Ok(())
         }
+    }
+
+    pub fn shards(&self) -> &Arc<ShardSet> {
+        &self.shards
     }
 }
 
@@ -295,262 +354,5 @@ impl TableProvider for ShardManager {
             }
         }
         Ok(plan)
-    }
-}
-
-#[derive(Debug)]
-pub struct ShardWriterWorker {
-    schema: Arc<Schema>,
-    topic: TopicId,
-    ctx: Arc<SynapseContext>,
-    stop: Arc<Notify>,
-    config: ShardConfig,
-    shards: Arc<ShardSet>,
-    recv: flume::Receiver<WriteJob>,
-}
-
-impl ShardWriterWorker {
-    async fn run(self) -> crate::Result<()> {
-        let wait_stop = self.stop.notified();
-        futures::pin_mut!(wait_stop);
-
-        let mut pending = FuturesUnordered::new();
-        let mut active: Option<JobHandle> = None;
-        let mut len = 0;
-
-        loop {
-            tokio::select! {
-                biased;
-                job = self.recv.recv_async() => {
-                    if let Ok(job) = job {
-                        for batch in &job.values {
-                            len += batch.num_rows();
-                        }
-                        let handle = if let Some(handle) = &mut active {
-                            handle
-                        } else {
-                            let shard = SingleShardWriter::create(
-                                &self.schema,
-                                self.ctx.clone(),
-                                &self.config,
-                                self.shards.clone(),
-                            ).await?;
-                            active = Some(JobHandle::new(shard));
-                            active.as_mut().unwrap()
-                        };
-                        if let Err(error) = handle.send(job) {
-                            tracing::error!(topic=%self.topic, ?error, "failed to write to active shard");
-                            active = None;
-                        }
-                        if len >= self.config.min_shard_size {
-                            pending.push(std::mem::take(&mut active).unwrap().finish().boxed());
-                            len = 0;
-                        }
-                    } else {
-                        break;
-                    }
-                },
-                // Clear pending write jobs from the queue
-                res = pending.next(), if !pending.is_empty() => {
-                    if let Some(Err(error)) = res {
-                        tracing::error!(topic=%self.topic, ?error, "failed to write data shard to parquet");
-                    }
-                },
-                _ = &mut wait_stop => break,
-            }
-        }
-        tracing::debug!(topic=%self.topic, "shutting down shard writer");
-        // Close active write channel
-        if let Some(active) = active {
-            pending.push(active.finish().boxed());
-        }
-        // Wait for all pending jobs to finish
-        while let Some(res) = pending.next().await {
-            if let Err(error) = res {
-                tracing::error!(?error, "failed to write data shard to parquet");
-            }
-        }
-        tracing::debug!(topic=%self.topic, "shard writer shut down");
-
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct WriteJob {
-    values: Vec<RecordBatch>,
-    done: oneshot::Sender<()>,
-}
-
-#[derive(Debug)]
-pub struct JobHandle {
-    handle: Option<JoinHandle<crate::Result<()>>>,
-    input: flume::Sender<WriteJob>,
-}
-
-impl JobHandle {
-    pub fn new(shard: SingleShardWriter) -> Self {
-        let (input, output) = flume::bounded(shard.config.queue_size);
-        let handle = Some(tokio::spawn(Self::run(output, shard)));
-        Self { handle, input }
-    }
-
-    pub fn send(&mut self, job: WriteJob) -> crate::Result<()> {
-        if let Err(_) = self.input.try_send(job) {
-            if let Some(handle) = &mut self.handle {
-                if handle.is_finished() {
-                    match self
-                        .handle
-                        .take()
-                        .expect("join handle should not be empty")
-                        .now_or_never()
-                        .expect("expected worker to be complete")
-                    {
-                        Err(e) => Err(crate::Error::worker_panic(
-                            "single_shard_writer",
-                            &e.into_panic(),
-                        )),
-                        Ok(Err(e)) => Err(e),
-                        Ok(Ok(_)) => unreachable!(),
-                    }
-                } else {
-                    Err(crate::Error::TableQueueFull)
-                }
-            } else {
-                Err(crate::Error::TableClosed)
-            }
-        } else {
-            Ok(())
-        }
-    }
-
-    pub async fn finish(self) -> crate::Result<()> {
-        drop(self.input);
-        if let Some(handle) = self.handle {
-            match handle.await {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(e)) => Err(e),
-                Err(e) => Err(crate::Error::worker_panic(
-                    "single_shard_worker",
-                    &e.into_panic(),
-                )),
-            }
-        } else {
-            Ok(())
-        }
-    }
-
-    async fn run(
-        jobs: flume::Receiver<WriteJob>,
-        mut shard: SingleShardWriter,
-    ) -> crate::Result<()> {
-        let mut pending = Vec::new();
-        while let Ok(job) = jobs.recv_async().await {
-            for batch in job.values {
-                if let Err(error) = shard.write(&batch).await {
-                    shard.abort().await?;
-                    return Err(error);
-                }
-            }
-            pending.push(job.done);
-        }
-        shard.close().await?;
-        for p in pending {
-            let _ = p.send(());
-        }
-
-        Ok(())
-    }
-}
-
-pub struct SingleShardWriter {
-    shard: ShardState,
-    file_schema: Option<SchemaRef>,
-    file: AsyncArrowWriter<Box<dyn AsyncWrite + Unpin + Send>>,
-    abort: String,
-    num_rows: usize,
-    shards: Arc<ShardSet>,
-    ctx: Arc<SynapseContext>,
-    config: ShardConfig,
-}
-
-impl SingleShardWriter {
-    const BUFFER_SIZE: usize = 10;
-
-    pub async fn create(
-        schema: &Arc<Schema>,
-        ctx: Arc<SynapseContext>,
-        cfg: &ShardConfig,
-        shards: Arc<ShardSet>,
-    ) -> crate::Result<Self> {
-        let shard = shards.create_shard((**schema).clone()).await?;
-        let path = shard.path.clone();
-
-        let (abort, file) = ctx.store().put_multipart(&path.as_path()).await?;
-
-        let props = WriterProperties::builder()
-            .set_sorting_columns(schema.sorting_columns())
-            .set_max_row_group_size(cfg.row_group_size)
-            .set_write_batch_size(cfg.write_batch_size)
-            .build();
-
-        let file_schema = schema.parquet_schema().cloned();
-        let file = AsyncArrowWriter::try_new(
-            file,
-            file_schema
-                .clone()
-                .unwrap_or_else(|| schema.arrow_schema().clone()),
-            Self::BUFFER_SIZE,
-            Some(props),
-        )?;
-
-        Ok(Self {
-            shard,
-            abort,
-            ctx,
-            file_schema,
-            file,
-            shards,
-            config: cfg.clone(),
-            num_rows: 0,
-        })
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.shard.path
-    }
-
-    async fn write(&mut self, batch: &RecordBatch) -> crate::Result<()> {
-        if let Some(schema) = &self.file_schema {
-            let batch = cast_batch(batch, schema.clone())?;
-            self.num_rows += batch.num_rows();
-            Ok(self.file.write(&batch).await?)
-        } else {
-            self.num_rows += batch.num_rows();
-            Ok(self.file.write(batch).await?)
-        }
-    }
-
-    async fn abort(self) -> crate::Result<()> {
-        self.shards.delete_shard(self.shard.id).await?;
-        self.ctx
-            .store()
-            .abort_multipart(&self.shard.path.as_path(), &self.abort)
-            .await?;
-        Ok(())
-    }
-
-    async fn close(self) -> crate::Result<()> {
-        if self.num_rows == 0 {
-            tracing::debug!(path=%self.path(), "discarding empty shard");
-            return self.abort().await;
-        }
-
-        let meta = self.file.close().await?;
-        debug_assert_eq!(self.num_rows, meta.num_rows as usize);
-        self.shards
-            .close_shard(self.shard.id, self.num_rows)
-            .await?;
-        Ok(())
     }
 }

@@ -71,6 +71,7 @@ impl TransactionLog {
             .load_newest_snapshot()
             .await?
             .unwrap_or_else(|| Snapshot::empty());
+        tracing::debug!(uuid=%snapshot.uuid, "loaded snapshot");
         snapshot.commit_many(self.load_transactions().await?)?;
         Ok(snapshot)
     }
@@ -106,7 +107,7 @@ impl TransactionLog {
             return Ok(None);
         }
         let (_, first, _) = file_list
-            .select_nth_unstable_by(0, |a, b| a.location.filename().cmp(&b.location.filename()));
+            .select_nth_unstable_by(0, |a, b| b.location.filename().cmp(&a.location.filename()));
         let raw = self.store.get(&first.location).await?.bytes().await?;
         Ok(Some(serde_json::from_slice(&raw)?))
     }

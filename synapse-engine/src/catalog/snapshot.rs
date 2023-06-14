@@ -51,6 +51,7 @@ impl Snapshot {
             CreateShard(t) => self.create_shard(t),
             CloseShard(t) => self.close_shard(t),
             DeleteShard(t) => self.delete_shard(t),
+            CompactShards(t) => self.compact_shards(t),
         }
     }
 
@@ -61,7 +62,7 @@ impl Snapshot {
 
     fn create_shard(&mut self, tsn: CreateShard) -> crate::Result<()> {
         let topic = self.topic_mut(&tsn.topic)?;
-        topic.shards.push(tsn.into());
+        topic.insert_shard(tsn.into())?;
         Ok(())
     }
 
@@ -75,6 +76,13 @@ impl Snapshot {
     fn delete_shard(&mut self, tsn: DeleteShard) -> crate::Result<()> {
         let topic = self.topic_mut(&tsn.topic)?;
         topic.shards.retain(|s| s.id != tsn.shard);
+        Ok(())
+    }
+
+    fn compact_shards(&mut self, tsn: CompactShards) -> crate::Result<()> {
+        let topic = self.topic_mut(&tsn.topic)?;
+
+        topic.insert_shard(tsn.into())?;
         Ok(())
     }
 
@@ -102,6 +110,14 @@ impl TopicState {
             Ok(idx) => Ok(&mut self.shards[idx]),
             Err(_) => todo!(),
         }
+    }
+
+    fn insert_shard(&mut self, shard: ShardState) -> crate::Result<()> {
+        match self.shards.binary_search_by_key(&shard.id, |s| s.id) {
+            Ok(_) => todo!(),
+            Err(idx) => self.shards.insert(idx, shard),
+        }
+        Ok(())
     }
 }
 
@@ -133,6 +149,12 @@ pub struct ShardState {
 impl From<CreateShard> for ShardState {
     fn from(s: CreateShard) -> Self {
         Self::new(s.shard, s.schema, s.path)
+    }
+}
+
+impl From<CompactShards> for ShardState {
+    fn from(s: CompactShards) -> Self {
+        Self::new(s.dst, s.schema, s.path)
     }
 }
 

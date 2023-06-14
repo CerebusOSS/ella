@@ -15,7 +15,7 @@ impl Default for TopicConfig {
             write_batch_size: 1024,
             rw_buffer_capacity: 1024 * 1024,
             min_shard_size: 1024 * 1024,
-            target_shard_size: 1024 * 1024 * 1024,
+            target_shard_size: 32 * 1024 * 1024,
             subscriber_queue_size: 1024,
             rw_queue_size: 1024,
             shard_queue_size: 128,
