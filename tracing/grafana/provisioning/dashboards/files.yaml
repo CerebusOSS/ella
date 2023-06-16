@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: External
+    folder: external
+    orgId: 1
+    updateIntervalSeconds: 5
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/dashboards/
+      foldersFromFilesStructure: false

@@ -1,0 +1,32 @@
+extensions:
+  memory_ballast:
+    size_mib: 512
+  zpages:
+    endpoint: localhost:55679
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+exporters:
+  jaeger:
+    endpoint: jaeger:14250
+    tls:
+      insecure: true
+
+processors:
+  batch:
+  memory_limiter:
+    limit_mib: 1536
+    spike_limit_mib: 512
+    check_interval: 5s
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [jaeger]
+  extensions: [memory_ballast, zpages]

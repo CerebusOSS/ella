@@ -1,4 +1,8 @@
 use engine::{EngineConfig, Schema};
+use opentelemetry::{
+    sdk::{trace, Resource},
+    KeyValue,
+};
 use synapse_engine as engine;
 use synapse_tensor as tensor;
 use synapse_time::Duration;
@@ -13,6 +17,12 @@ async fn main() -> anyhow::Result<()> {
     let tracer = opentelemetry_otlp::new_pipeline()
         .tracing()
         .with_exporter(opentelemetry_otlp::new_exporter().tonic())
+        .with_trace_config(
+            trace::config().with_resource(Resource::new(vec![KeyValue::new(
+                "service.name",
+                "synapse",
+            )])),
+        )
         .install_batch(opentelemetry::runtime::Tokio)?;
 
     tracing_subscriber::registry()
