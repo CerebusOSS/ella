@@ -14,11 +14,12 @@ use datafusion::{
 use flume::TrySendError;
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
+use tracing::Instrument;
 
 use super::config::RwBufferConfig;
 use super::ShardManager;
 use crate::catalog::TopicId;
-use crate::util::instrument::Instrument;
+use crate::metrics::{InstrumentedBuffer, MonitorLoadExt};
 use crate::util::work_queue::{work_queue, WorkQueueIn, WorkQueueOut};
 use crate::Schema;
 
@@ -26,7 +27,7 @@ pub struct RwBuffer {
     topic: TopicId,
     config: RwBufferConfig,
     schema: Arc<Schema>,
-    input: Instrument<flume::Sender<RecordBatch>>,
+    input: InstrumentedBuffer<flume::Sender<RecordBatch>>,
     compacting: Arc<WorkQueueIn<RecordBatch>>,
     writing: Arc<WorkQueueIn<()>>,
     handle: Mutex<Option<JoinHandle<()>>>,
@@ -47,25 +48,28 @@ impl RwBuffer {
     pub fn new(topic: TopicId, shards: Arc<ShardManager>, config: RwBufferConfig) -> Self {
         let schema = shards.schema();
         let (send, recv) = flume::bounded(config.queue_size);
-        let input = Instrument::new(send, &format!("{}.rw.input", topic));
+        let input = send.monitor_load(&topic, "rw.input");
         let (compacting, compacting_out) = work_queue(config.queue_size);
         let (writing, writing_out) = work_queue(config.queue_size);
         let compacting = Arc::new(compacting);
         let writing = Arc::new(writing);
         let stop = Arc::new(Notify::new());
 
-        let handle = tokio::spawn(Self::run(
-            topic.clone(),
-            recv,
-            compacting.clone(),
-            compacting_out,
-            writing.clone(),
-            writing_out,
-            shards,
-            stop.clone(),
-            config.clone(),
-            schema.clone(),
-        ));
+        let handle = tokio::spawn(
+            Self::run(
+                topic.clone(),
+                recv,
+                compacting.clone(),
+                compacting_out,
+                writing.clone(),
+                writing_out,
+                shards,
+                stop.clone(),
+                config.clone(),
+                schema.clone(),
+            )
+            .instrument(tracing::trace_span!("rw", %topic)),
+        );
         let handle = Mutex::new(Some(handle));
 
         Self {
@@ -132,16 +136,19 @@ impl RwBuffer {
 
         let compact_buffer = |rows: usize| {
             let arrow_schema = schema.arrow_schema().clone();
-            let res = compacting_in.process(|mut values| async move {
-                if values.len() == 1 {
-                    return values.pop().unwrap();
-                } else {
-                    tokio::task::spawn_blocking(move || {
-                        compute::concat_batches(&arrow_schema, &values).unwrap()
-                    })
-                    .await
-                    .unwrap()
+            let res = compacting_in.process(|mut values| {
+                async move {
+                    if values.len() == 1 {
+                        return values.pop().unwrap();
+                    } else {
+                        tokio::task::spawn_blocking(move || {
+                            compute::concat_batches(&arrow_schema, &values).unwrap()
+                        })
+                        .await
+                        .unwrap()
+                    }
                 }
+                .in_current_span()
             });
             match res {
                 Ok(_) => tracing::debug!(%topic, rows, "compacting r/w buffer"),
@@ -153,9 +160,12 @@ impl RwBuffer {
             let rows = batch.num_rows();
             writing_in.push(batch);
             let shards = shards.clone();
-            let res = writing_in.try_process(|values| async move {
-                let _ = shards.write(values)?.await;
-                Ok(())
+            let res = writing_in.try_process(|values| {
+                async move {
+                    let _ = shards.write(values)?.await;
+                    Ok(())
+                }
+                .in_current_span()
             });
             match res {
                 Ok(_) => tracing::debug!(%topic, rows, "writing compacted buffer"),

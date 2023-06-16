@@ -2,6 +2,7 @@
 pub mod catalog;
 mod context;
 mod engine;
+pub(crate) mod metrics;
 mod path;
 #[cfg(feature = "pyo3")]
 mod py;

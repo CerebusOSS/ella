@@ -1,4 +1,3 @@
-pub mod instrument;
 pub mod parquet;
 pub mod work_queue;
 
@@ -11,6 +10,7 @@ use tokio::{
     task::JoinHandle,
     time::MissedTickBehavior,
 };
+use tracing::{Instrument, Level};
 
 use crate::{catalog::Catalog, topic::compact_shards, SynapseContext, Topic};
 
@@ -29,7 +29,9 @@ impl Maintainer {
             interval,
             stop: stop.clone(),
         };
-        let handle = Mutex::new(Some(tokio::spawn(worker.run())));
+        let handle = Mutex::new(Some(tokio::spawn(
+            worker.run().instrument(tracing::trace_span!("maintainer")),
+        )));
         Self { handle, stop }
     }
 
@@ -76,6 +78,7 @@ impl MaintenanceWorker {
         }
     }
 
+    #[tracing::instrument(skip_all, fields(topic=%topic.id()), level = Level::TRACE)]
     async fn compact_topic(&self, topic: &Arc<Topic>) -> crate::Result<()> {
         let mut pending = vec![];
         let mut pending_rows = 0;
@@ -106,6 +109,7 @@ impl MaintenanceWorker {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(topic=%topic.id()), level = Level::TRACE)]
     async fn cleanup_topic(&self, topic: &Arc<Topic>) -> crate::Result<()> {
         let store = self.ctx.store();
         let mut files = store

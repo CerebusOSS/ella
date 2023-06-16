@@ -1,12 +1,17 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    net::{SocketAddr, ToSocketAddrs},
+    sync::Arc,
+};
 
 use datafusion::prelude::{DataFrame, SessionConfig, SessionContext};
 use synapse_time::Duration;
 
 use crate::{
     catalog::{Catalog, TopicId},
+    metrics::MetricsServer,
     topic::{Topic, TopicConfig},
-    util::{instrument::LoadMonitor, Maintainer},
+    util::Maintainer,
     Schema, SynapseContext,
 };
 
@@ -14,7 +19,7 @@ use crate::{
 pub struct EngineConfig {
     default_topic_config: TopicConfig,
     topic_config_overrides: HashMap<TopicId, TopicConfig>,
-    log_load_metrics: Option<Duration>,
+    serve_metrics: Option<SocketAddr>,
     maintenance_interval: Duration,
 }
 
@@ -23,7 +28,7 @@ impl Default for EngineConfig {
         Self {
             default_topic_config: TopicConfig::default(),
             topic_config_overrides: HashMap::new(),
-            log_load_metrics: None,
+            serve_metrics: None,
             maintenance_interval: Duration::seconds(30),
         }
     }
@@ -34,8 +39,8 @@ impl EngineConfig {
         Self::default()
     }
 
-    pub fn with_log_load_metrics(mut self, rate: Duration) -> Self {
-        self.log_load_metrics = Some(rate);
+    pub fn with_serve_metrics<A: ToSocketAddrs>(mut self, address: A) -> Self {
+        self.serve_metrics = Some(address.to_socket_addrs().unwrap().next().unwrap());
         self
     }
 
@@ -71,8 +76,9 @@ impl EngineConfig {
 pub struct Engine {
     ctx: Arc<SynapseContext>,
     catalog: Arc<Catalog>,
-    load_monitor: Arc<Option<LoadMonitor>>,
     maintainer: Arc<Maintainer>,
+    #[cfg(feature = "metrics")]
+    metrics: Arc<Option<crate::metrics::MetricsServer>>,
 }
 
 impl Engine {
@@ -84,7 +90,6 @@ impl Engine {
         root: impl AsRef<str>,
         config: EngineConfig,
     ) -> crate::Result<Self> {
-        let load_monitor = Arc::new(config.log_load_metrics.map(|rate| LoadMonitor::start(rate)));
         let root: crate::Path = root.as_ref().parse()?;
         let df_cfg = SessionConfig::new()
             .with_create_default_catalog_and_schema(false)
@@ -102,11 +107,20 @@ impl Engine {
             ctx.clone(),
             config.maintenance_interval,
         ));
+
+        #[cfg(feature = "metrics")]
+        let metrics = Arc::new(
+            config
+                .serve_metrics
+                .as_ref()
+                .map(|addr| MetricsServer::start(addr.clone())),
+        );
         Ok(Self {
             ctx,
             catalog,
-            load_monitor,
             maintainer,
+            #[cfg(feature = "metrics")]
+            metrics,
         })
     }
 
@@ -155,8 +169,9 @@ impl Engine {
         self.maintainer.stop().await;
         self.ctx.log().create_snapshot().await?;
 
-        if let Some(monitor) = self.load_monitor.as_ref() {
-            monitor.stop();
+        #[cfg(feature = "metrics")]
+        if let Some(metrics) = self.metrics.as_ref() {
+            metrics.stop().await;
         }
 
         out

@@ -222,7 +222,7 @@ async fn compact_same_schema<W: AsyncWrite + Send + Unpin>(
                     let close_res = ColumnCloseResult {
                         bytes_written: byte_len,
                         rows_written: meta.num_rows() as u64,
-                        bloom_filter: group_reader.get_column_bloom_filter(i).cloned(),
+                        bloom_filter: group_reader.get_column_bloom_filter(c).cloned(),
                         column_index,
                         offset_index: offset_index.map(|idx| OffsetIndex {
                             page_locations: idx[i][c].clone(),

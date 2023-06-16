@@ -38,7 +38,8 @@ use crate::{
         transactions::{CloseShard, CompactShards, CreateShard, DeleteShard},
         ShardId, TopicId,
     },
-    util::{instrument::Instrument, parquet::cast_batch_plan},
+    metrics::{InstrumentedBuffer, MonitorLoadExt},
+    util::parquet::cast_batch_plan,
     Path, Schema, SynapseContext,
 };
 
@@ -58,7 +59,6 @@ impl ShardSet {
         let path = state.path.clone();
         let mut shards = BTreeMap::new();
         for shard in &state.shards {
-            println!("{:?}", shard.path);
             shards.insert(shard.id, shard.clone());
         }
 
@@ -134,7 +134,6 @@ impl ShardSet {
     ) -> crate::Result<ShardState> {
         let mut shards = self.shards.write().await;
         let tsn = CompactShards::new(self.topic.clone(), src, schema, &self.path);
-        tracing::debug!(topic=%self.topic, src=?tsn.src, dst=%tsn.dst, "compacting shards");
         self.ctx.log().commit(tsn.clone()).await?;
         let shard = ShardState::from(tsn);
         shards.insert(shard.id, shard.clone());
@@ -178,7 +177,7 @@ pub struct ShardManager {
     path: Path,
     ctx: Arc<SynapseContext>,
     shards: Arc<ShardSet>,
-    input: Instrument<flume::Sender<WriteJob>>,
+    input: InstrumentedBuffer<flume::Sender<WriteJob>>,
     stop: Arc<Notify>,
     handle: Mutex<Option<JoinHandle<crate::Result<()>>>>,
 }
@@ -194,7 +193,7 @@ impl ShardManager {
         let path = state.path.clone();
         let shards = Arc::new(ShardSet::new(ctx.clone(), state));
         let (input, output) = flume::bounded(config.queue_size);
-        let input = Instrument::new(input, &format!("{}.shard.manager", topic));
+        let input = input.monitor_load(&topic, "shard.manager");
         let stop = Arc::new(Notify::new());
         let worker = ShardWriterWorker::new(
             schema.clone(),
