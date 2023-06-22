@@ -71,6 +71,10 @@ pub trait Shape:
         ShapeIndexIter::new(self.clone())
     }
 
+    fn axis(&self, axis: Axis) -> usize {
+        self[axis.index(self)]
+    }
+
     #[doc(hidden)]
     fn default_strides(&self) -> Self {
         let mut strides = Self::zeros(self.ndim());

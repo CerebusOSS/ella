@@ -150,6 +150,25 @@ where
         strides[ax] = (-stride) as usize;
         Tensor::new(values, self.shape().clone(), strides)
     }
+
+    pub fn roll(&self, axis: Axis, roll: isize) -> Self
+    where
+        S: RemoveAxis,
+    {
+        let len = self.shape().axis(axis);
+        let shift = -1 * roll.checked_rem(len as isize).unwrap_or_default();
+        if roll == 0 {
+            return self.clone();
+        }
+        Tensor::concat(
+            axis,
+            &[
+                self.slice_axis(axis, shift..),
+                self.slice_axis(axis, ..shift),
+            ],
+        )
+        .unwrap()
+    }
 }
 
 /// > 1-D shape operations
@@ -180,22 +199,41 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::Axis;
+
     #[test]
     fn test_invert_axis() {
         let x = crate::tensor![[1, 2, 3], [4, 5, 6],];
-        let ax0_inv = crate::tensor![[4, 5, 6], [1, 2, 3]];
-        let ax1_inv = crate::tensor![[3, 2, 1], [6, 5, 4]];
-        assert!(
-            x.invert_axis(0).eq(&ax0_inv).all(),
-            "{:?} != {:?}",
-            x,
-            ax0_inv
+
+        crate::assert_tensor_eq!(x.invert_axis(0), crate::tensor![[4, 5, 6], [1, 2, 3]]);
+        crate::assert_tensor_eq!(x.invert_axis(1), crate::tensor![[3, 2, 1], [6, 5, 4]]);
+    }
+
+    #[test]
+    fn test_roll() {
+        let x = crate::tensor![[1, 2, 3], [4, 5, 6], [7, 8, 9],];
+
+        // check forward roll
+        crate::assert_tensor_eq!(
+            x.roll(Axis(0), 2),
+            crate::tensor![[4, 5, 6], [7, 8, 9], [1, 2, 3]]
         );
-        assert!(
-            x.invert_axis(1).eq(&ax1_inv).all(),
-            "{:?} != {:?}",
-            x,
-            ax1_inv
+
+        // check backward roll
+        crate::assert_tensor_eq!(
+            x.roll(Axis(0), -1),
+            crate::tensor![[4, 5, 6], [7, 8, 9], [1, 2, 3]]
+        );
+
+        // check that rolls cycle back around
+        crate::assert_tensor_eq!(
+            x.roll(Axis(0), 5),
+            crate::tensor![[4, 5, 6], [7, 8, 9], [1, 2, 3]]
+        );
+
+        crate::assert_tensor_eq!(
+            x.roll(Axis(-1), 1),
+            crate::tensor![[3, 1, 2], [6, 4, 5], [9, 7, 8]]
         );
     }
 }
