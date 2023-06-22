@@ -16,6 +16,7 @@ pub use column::{tensor_schema, Column, ColumnData};
 pub use frame::{DataFrame, Frame};
 pub use mask::Mask;
 pub use shape::{Axis, Const, Dyn, IntoShape, RemoveAxis, Shape};
+pub use slice::{NewAxis, Slice};
 pub use tensor::{Tensor, Tensor1, Tensor2, Tensor3, Tensor4, TensorD};
 pub use tensor_type::TensorType;
 pub use tensor_value::TensorValue;
@@ -70,3 +71,13 @@ impl Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+#[macro_export]
+macro_rules! assert_tensor_eq {
+    ($a:expr, $b:expr) => {
+        match ($a, $b) {
+            (a, b) => assert!(a.eq(&b).all(), "{:?} != {:?}", a, b),
+        }
+    };
+}

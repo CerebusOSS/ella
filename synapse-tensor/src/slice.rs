@@ -1,15 +1,15 @@
 use std::{
     marker::PhantomData,
-    ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive},
+    ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive},
 };
 
 use crate::{
-    shape::{stride_offset, IndexValue},
-    Dyn, Shape,
+    shape::{stride_offset, IndexValue, NdimAdd},
+    Const, Shape,
 };
 
-pub trait Slicer<S: Shape>: AsRef<[AxisSliceSpec]> {
-    type Shape: Shape;
+pub trait SliceShape<In: Shape>: AsRef<[AxisSliceSpec]> {
+    type Out: Shape;
 
     fn in_ndim(&self) -> usize;
     fn out_ndim(&self) -> usize;
@@ -22,8 +22,8 @@ pub trait Slicer<S: Shape>: AsRef<[AxisSliceSpec]> {
 pub struct SliceSpec<T: AsRef<[AxisSliceSpec]>, In, Out> {
     #[as_ref(forward)]
     args: T,
-    _in: PhantomData<fn() -> In>,
-    _out: PhantomData<fn() -> Out>,
+    ndim_in: PhantomData<In>,
+    ndim_out: PhantomData<Out>,
 }
 
 impl<T, In, Out> SliceSpec<T, In, Out>
@@ -55,29 +55,28 @@ where
                 .sum::<usize>()
         }
     }
+
+    #[doc(hidden)]
+    pub unsafe fn new_unchecked(
+        args: T,
+        ndim_in: PhantomData<In>,
+        ndim_out: PhantomData<Out>,
+    ) -> Self {
+        Self {
+            args,
+            ndim_in,
+            ndim_out,
+        }
+    }
 }
 
-// impl<Out, const D: usize> Slicer<Const<D>> for SliceSpec<[AxisSliceSpec; D], Const<D>, Out>
-//     where Out: Shape,
-//           Const<D>: Shape,
-// {
-//     type Shape = Out;
-
-//     fn in_ndim(&self) -> usize {
-//         self.in_ndim()
-//     }
-
-//     fn out_ndim(&self) -> usize {
-//         self.out_ndim()
-//     }
-// }
-
-impl<T, Out> Slicer<Dyn> for SliceSpec<T, Dyn, Out>
+impl<T, In, Out> SliceShape<In> for SliceSpec<T, In, Out>
 where
-    Out: Shape,
     T: AsRef<[AxisSliceSpec]>,
+    In: Shape,
+    Out: Shape,
 {
-    type Shape = Out;
+    type Out = Out;
 
     fn in_ndim(&self) -> usize {
         self.in_ndim()
@@ -88,21 +87,21 @@ where
     }
 }
 
-// impl<T, Out> Slicer<Const<2>> for SliceSpec<T, Const<2>, Out>
-// where
-//     T: AsRef<[AxisSliceSpec]>,
-//     Out: Shape,
-// {
-//     type Shape = Out;
+impl<T, S> SliceShape<S> for &T
+where
+    T: SliceShape<S> + ?Sized,
+    S: Shape,
+{
+    type Out = T::Out;
 
-//     fn in_ndim(&self) -> usize {
-//         self.in_ndim()
-//     }
+    fn in_ndim(&self) -> usize {
+        (*self).in_ndim()
+    }
 
-//     fn out_ndim(&self) -> usize {
-//         self.out_ndim()
-//     }
-// }
+    fn out_ndim(&self) -> usize {
+        (*self).out_ndim()
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct NewAxis;
@@ -112,6 +111,15 @@ pub struct Slice {
     pub start: isize,
     pub end: Option<isize>,
     pub step: isize,
+}
+
+impl Slice {
+    #[inline]
+    pub fn step_by(mut self, step: isize) -> Self {
+        debug_assert_ne!(step, 0, "slice step must be non-zero");
+        self.step *= step;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,17 +151,19 @@ impl From<NewAxis> for AxisSliceSpec {
     }
 }
 
-impl From<isize> for AxisSliceSpec {
-    fn from(value: isize) -> Self {
-        Self::Index(value)
-    }
+macro_rules! impl_from_index {
+    ($($t:ty),+) => {
+        $(
+            impl From<$t> for AxisSliceSpec {
+                fn from(value: $t) -> Self {
+                    Self::Index(value as isize)
+                }
+            }
+        )+
+    };
 }
 
-impl From<usize> for AxisSliceSpec {
-    fn from(value: usize) -> Self {
-        Self::Index(value as isize)
-    }
-}
+impl_from_index!(usize, isize, i32, i64, u32, u64);
 
 impl<S> From<S> for AxisSliceSpec
 where
@@ -220,24 +230,15 @@ macro_rules! impl_slice {
 
 impl_slice!(usize, isize, i32);
 
-pub trait SliceStep {
-    fn step(self, step: isize) -> Slice;
-}
-
-impl<S> SliceStep for S
-where
-    S: Into<Slice>,
-{
-    fn step(self, step: isize) -> Slice {
-        let mut slice: Slice = self.into();
-        slice.step = step;
-        slice
+impl From<RangeFull> for Slice {
+    fn from(_: RangeFull) -> Self {
+        Self {
+            start: 0,
+            end: None,
+            step: 1,
+        }
     }
 }
-
-// trait SliceNextDim {
-//     type
-// }
 
 pub(crate) fn do_slice(axis: &mut usize, stride: &mut usize, slice: Slice) -> isize {
     let (start, end, step) = to_abs_slice(*axis, slice);
@@ -278,6 +279,109 @@ fn to_abs_slice(axis_len: usize, slice: Slice) -> (usize, usize, isize) {
     (start, end, step)
 }
 
+#[macro_export]
 macro_rules! slice {
-    () => {};
+    (@parse $in:expr, $out:expr, [$($stack:tt)*] $r:expr;$s:expr $(,)?) => {
+        #[allow(unsafe_code)]
+        unsafe {
+            $crate::slice::SliceSpec::new_unchecked(
+                [$($stack)* $crate::slice!(@convert $r, $s)],
+                $crate::slice::SliceNextShape::next_in_shape(&$r, $in),
+                $crate::slice::SliceNextShape::next_out_shape(&$r, $out),
+            )
+        }
+    };
+    (@parse $in:expr, $out:expr, [$($stack:tt)*] $r:expr $(,)?) => {
+        #[allow(unsafe_code)]
+        unsafe {
+            $crate::slice::SliceSpec::new_unchecked(
+                [$($stack)* $crate::slice!(@convert $r)],
+                $crate::slice::SliceNextShape::next_in_shape(&$r, $in),
+                $crate::slice::SliceNextShape::next_out_shape(&$r, $out),
+            )
+        }
+    };
+    (@parse $in:expr, $out:expr, [$($stack:tt)*] $r:expr;$s:expr, $($t:tt)+) => {
+        $crate::slice![@parse
+            $crate::slice::SliceNextShape::next_in_shape(&$r, $in),
+            $crate::slice::SliceNextShape::next_out_shape(&$r, $out),
+            [$($stack)* $crate::slice!(@convert $r, $s),]
+            $($t)+
+        ]
+    };
+    (@parse $in:expr, $out:expr, [$($stack:tt)*] $r:expr, $($t:tt)+) => {
+        $crate::slice![@parse
+            $crate::slice::SliceNextShape::next_in_shape(&$r, $in),
+            $crate::slice::SliceNextShape::next_out_shape(&$r, $out),
+            [$($stack)* $crate::slice!(@convert $r),]
+            $($t)+
+        ]
+    };
+    (@parse ::core::marker::PhantomData::<$crate::Const<0>>, ::core::marker::PhantomData::<$crate::Const<0>>, []) => {
+        #[allow(unsafe_code)]
+        unsafe {
+            $crate::slice::SliceSpec::new_unchecked(
+                [],
+                ::core::marker::PhantomData::<$crate::Const<0>>,
+                ::core::marker::PhantomData::<$crate::Const<0>>,
+            )
+        }
+    };
+    (@parse $($t:tt)*) => { compile_error!("invalid slice syntax") };
+    (@convert $r:expr) => {
+        <$crate::slice::AxisSliceSpec as ::core::convert::From<_>>::from($r)
+    };
+    (@convert $r:expr, $s:expr) => {
+        <$crate::slice::AxisSliceSpec as ::core::convert::From<_>>::from(
+            <$crate::slice::Slice as ::core::convert::From<_>>::from($r).step_by($s)
+        )
+    };
+    ($($t:tt)*) => {
+        $crate::slice![@parse
+            ::core::marker::PhantomData::<$crate::Const<0>>,
+            ::core::marker::PhantomData::<$crate::Const<0>>,
+            []
+            $($t)*
+        ]
+    };
 }
+
+#[doc(hidden)]
+pub trait SliceNextShape {
+    type In: Shape;
+    type Out: Shape;
+
+    fn next_in_shape<S>(&self, _: PhantomData<S>) -> PhantomData<<S as NdimAdd<Self::In>>::Output>
+    where
+        S: Shape + NdimAdd<Self::In>,
+    {
+        PhantomData
+    }
+
+    fn next_out_shape<S>(&self, _: PhantomData<S>) -> PhantomData<<S as NdimAdd<Self::Out>>::Output>
+    where
+        S: Shape + NdimAdd<Self::Out>,
+    {
+        PhantomData
+    }
+}
+
+macro_rules! impl_slicenextshape {
+    (($($generics:tt)*), $self:ty, $in:ty, $out:ty) => {
+        impl<$($generics)*> SliceNextShape for $self {
+            type In = $in;
+            type Out = $out;
+        }
+    };
+}
+
+impl_slicenextshape!((), isize, Const<1>, Const<0>);
+impl_slicenextshape!((), usize, Const<1>, Const<0>);
+impl_slicenextshape!((), i32, Const<1>, Const<0>);
+impl_slicenextshape!((T), Range<T>, Const<1>, Const<1>);
+impl_slicenextshape!((T), RangeInclusive<T>, Const<1>, Const<1>);
+impl_slicenextshape!((T), RangeFrom<T>, Const<1>, Const<1>);
+impl_slicenextshape!((T), RangeTo<T>, Const<1>, Const<1>);
+impl_slicenextshape!((T), RangeToInclusive<T>, Const<1>, Const<1>);
+impl_slicenextshape!((), RangeFull, Const<1>, Const<1>);
+impl_slicenextshape!((), NewAxis, Const<0>, Const<1>);

@@ -1,6 +1,6 @@
 use crate::{
     shape::{stride_offset, IndexValue},
-    slice::{do_slice, AxisSliceSpec, Slice, Slicer},
+    slice::{do_slice, AxisSliceSpec, Slice, SliceShape},
     Axis, Const, Shape, Tensor, TensorValue,
 };
 
@@ -16,13 +16,14 @@ where
         let mut shape = self.shape().clone();
         let mut strides = self.strides().clone();
         let ax_idx = axis.index(&shape);
+        let slice: Slice = slice.into();
 
         let offset = do_slice(
             &mut shape.slice_mut()[ax_idx],
             &mut strides.slice_mut()[ax_idx],
-            slice.into(),
+            slice.clone(),
         );
-        let values = self.values().offset_exact(offset);
+        let values = self.values().offset(offset);
         Tensor::new(values, shape, strides)
     }
 
@@ -32,14 +33,14 @@ where
         let mut shape = self.shape().clone();
         shape.slice_mut()[ax] = 1;
         let offset = stride_offset(index, self.strides()[ax]);
-        let values = self.values().offset_exact(offset);
+        let values = self.values().offset(offset);
         Tensor::new(values, shape, self.strides().clone())
     }
 
-    pub fn slice<I: Slicer<S>>(&self, slice: I) -> Tensor<T, I::Shape> {
+    pub fn slice<I: SliceShape<S>>(&self, slice: I) -> Tensor<T, I::Out> {
         let mut this = self.clone();
-        let mut shape = <I::Shape as Shape>::zeros(slice.out_ndim());
-        let mut strides = <I::Shape as Shape>::zeros(slice.out_ndim());
+        let mut shape = <I::Out as Shape>::zeros(slice.out_ndim());
+        let mut strides = <I::Out as Shape>::zeros(slice.out_ndim());
         let mut in_dim: usize = 0;
         let mut out_dim = 0;
 
@@ -71,5 +72,30 @@ where
         let stride = self.strides().slice().iter().sum();
 
         Tensor::new(self.values().clone(), Const([len]), Const([stride]))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{Axis, NewAxis};
+
+    #[test]
+    fn test_slice_axis() {
+        let x = crate::tensor![[1, 2, 3, 4], [5, 6, 7, 8],];
+        crate::assert_tensor_eq!(x.slice_axis(Axis(1), ..=1), crate::tensor![[1, 2], [5, 6]]);
+        crate::assert_tensor_eq!(x.slice_axis(Axis(1), 2..), crate::tensor![[3, 4], [7, 8]]);
+        crate::assert_tensor_eq!(x.slice_axis(Axis(1), 1..-2), crate::tensor![[2], [6]]);
+        crate::assert_tensor_eq!(x.slice_axis(Axis(0), 1..), crate::tensor![[5, 6, 7, 8]]);
+    }
+
+    #[test]
+    fn test_slice() {
+        let x = crate::tensor![[1, 2, 3, 4], [5, 6, 7, 8],];
+
+        crate::assert_tensor_eq!(x.slice(crate::slice![..1, 1..=2]), crate::tensor![[2, 3]]);
+        crate::assert_tensor_eq!(
+            x.slice(crate::slice![NewAxis, ..;-1, 0..3;2]),
+            crate::tensor![[[5, 7], [1, 3]]]
+        );
     }
 }

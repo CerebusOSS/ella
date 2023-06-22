@@ -99,7 +99,12 @@ where
     }
 
     pub fn slice_exact(&self, offset: isize, length: usize) -> Self {
-        debug_assert!(self.offset as isize + offset >= 0);
+        debug_assert!(
+            self.offset as isize + offset >= 0,
+            "existing offset ({}) + new offset ({}) must be >= 0",
+            self.offset as isize,
+            offset,
+        );
         let offset = (self.offset as isize + offset) as usize;
         debug_assert!(length + offset <= self.values.len());
         let values = Arc::new(T::slice(&self.values, offset, length));
@@ -107,7 +112,12 @@ where
     }
 
     pub fn slice(&self, offset: isize, length: usize) -> Self {
-        debug_assert!(self.offset as isize + offset >= 0);
+        debug_assert!(
+            self.offset as isize + offset >= 0,
+            "existing offset ({}) + new offset ({}) must be >= 0",
+            self.offset as isize,
+            offset,
+        );
         let offset = (self.offset as isize + offset) as usize;
         debug_assert!(
             length + offset <= self.values.len(),

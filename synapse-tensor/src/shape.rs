@@ -1,6 +1,8 @@
+mod add;
 mod index;
 mod iter;
 mod max;
+pub use add::NdimAdd;
 pub use index::{Flat, IndexValue, Indexer};
 pub use iter::ShapeIndexIter;
 pub use max::NdimMax;
