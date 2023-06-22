@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use arrow::{
     buffer::{BooleanBuffer, Buffer, NullBuffer},
     util::bit_util,
@@ -99,17 +101,25 @@ impl MaskData {
         if let Some(values) = &self.values {
             debug_assert!(length + offset <= values.len());
             let mut num_masked = self.num_masked;
-            if offset_diff < 0 {
-                num_masked += Self::count_masked(values, offset, self.offset)
-            } else if offset_diff > 0 {
-                num_masked -= Self::count_masked(values, self.offset, offset)
+            match offset_diff.cmp(&0) {
+                Ordering::Less => {
+                    num_masked += Self::count_masked(values, offset, self.offset);
+                }
+                Ordering::Greater => {
+                    num_masked -= Self::count_masked(values, self.offset, offset);
+                }
+                _ => {}
             }
             let old_end = self.offset + self.len;
             let new_end = offset + length;
-            if new_end > old_end {
-                num_masked += Self::count_masked(values, old_end, new_end);
-            } else if new_end < old_end {
-                num_masked += Self::count_masked(values, new_end, old_end);
+            match new_end.cmp(&old_end) {
+                Ordering::Greater => {
+                    num_masked += Self::count_masked(values, old_end, new_end);
+                }
+                Ordering::Less => {
+                    num_masked += Self::count_masked(values, new_end, old_end);
+                }
+                _ => {}
             }
 
             Self {
@@ -167,7 +177,7 @@ impl MaskData {
         }
     }
 
-    pub fn to_buffer(self) -> BooleanBuffer {
+    pub fn into_buffer(self) -> BooleanBuffer {
         if let Some(values) = self.values {
             values.inner().slice(self.offset, self.len)
         } else {

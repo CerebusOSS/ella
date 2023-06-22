@@ -125,7 +125,7 @@ where
     }
 
     fn map_axis(&mut self, idx: &mut usize) -> usize {
-        let tidx = match self.sizes.binary_search(&idx) {
+        let tidx = match self.sizes.binary_search(idx) {
             Ok(end) => end + 1,
             Err(tidx) => tidx,
         };

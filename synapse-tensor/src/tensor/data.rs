@@ -22,7 +22,7 @@ where
             values: self.values.clone(),
             offset: self.offset,
             len: self.len,
-            _type: self._type.clone(),
+            _type: self._type,
         }
     }
 }

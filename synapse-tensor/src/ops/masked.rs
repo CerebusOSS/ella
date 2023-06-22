@@ -50,7 +50,7 @@ where
     T: TensorValue,
     S: Shape,
 {
-    pub fn with_mask<'a, M>(&'a self, mask: M) -> Tensor<T::Masked, S>
+    pub fn with_mask<M>(&self, mask: M) -> Tensor<T::Masked, S>
     where
         M: AsMask<S>,
     {

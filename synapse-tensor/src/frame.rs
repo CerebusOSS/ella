@@ -33,20 +33,12 @@ pub(crate) fn batch_to_columns(rb: &RecordBatch) -> crate::Result<Arc<[Column]>>
 }
 
 pub(crate) fn frame_to_batch<F: Frame>(frame: &F) -> RecordBatch {
-    let columns = frame
-        .columns()
-        .map(|col| column_to_array(col))
-        .collect::<Vec<_>>();
+    let columns = frame.columns().map(column_to_array).collect::<Vec<_>>();
     RecordBatch::try_new(Arc::new(frame_to_schema(frame)), columns).unwrap()
 }
 
 pub(crate) fn frame_to_schema<F: Frame>(frame: &F) -> Schema {
-    Schema::new(
-        frame
-            .columns()
-            .map(|col| column_to_field(col))
-            .collect::<Vec<_>>(),
-    )
+    Schema::new(frame.columns().map(column_to_field).collect::<Vec<_>>())
 }
 
 pub struct FrameColIter<'a, F: ?Sized> {

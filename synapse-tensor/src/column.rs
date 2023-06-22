@@ -132,7 +132,7 @@ where
             strides,
         ))
     } else {
-        Err(crate::Error::cast(col.dtype().clone(), T::TENSOR_TYPE))
+        Err(crate::Error::cast(col.dtype(), T::TENSOR_TYPE))
     }
 }
 
@@ -199,7 +199,7 @@ pub(crate) fn array_to_column(field: &Field, array: &ArrayRef) -> crate::Result<
         dtype => {
             let dtype = TensorType::from_arrow(dtype)?;
             let shape = Dyn::from([array.len()]);
-            Ok(make_column(field.name().clone(), dtype, shape, &array))
+            Ok(make_column(field.name().clone(), dtype, shape, array))
         }
     }
 }

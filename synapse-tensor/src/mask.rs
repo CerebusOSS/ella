@@ -35,17 +35,17 @@ impl<S: Shape> From<Tensor<bool, S>> for Mask<S> {
     }
 }
 
-impl<'a, S: Shape> From<Mask<S>> for Tensor<bool, S> {
+impl<S: Shape> From<Mask<S>> for Tensor<bool, S> {
     fn from(m: Mask<S>) -> Self {
         Tensor::new(
-            BooleanArray::new(m.values.to_buffer(), None),
-            m.shape.clone(),
-            m.strides.clone(),
+            BooleanArray::new(m.values.into_buffer(), None),
+            m.shape,
+            m.strides,
         )
     }
 }
 
-impl<'a, S: Shape> Mask<S> {
+impl<S: Shape> Mask<S> {
     pub(crate) fn new<D>(values: D, shape: S, strides: S) -> Self
     where
         D: Into<MaskData>,

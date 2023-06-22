@@ -21,7 +21,7 @@ where
         let offset = do_slice(
             &mut shape.slice_mut()[ax_idx],
             &mut strides.slice_mut()[ax_idx],
-            slice.clone(),
+            slice,
         );
         let values = self.values().offset(offset);
         Tensor::new(values, shape, strides)
@@ -55,8 +55,8 @@ where
                     this = this.collapse_axis(Axis(in_dim as isize), idx);
                     in_dim += 1;
                 }
-                AxisSliceSpec::Slice(s) => {
-                    this = this.slice_axis(Axis(in_dim as isize), s.clone());
+                &AxisSliceSpec::Slice(s) => {
+                    this = this.slice_axis(Axis(in_dim as isize), s);
                     shape[out_dim] = this.shape()[in_dim];
                     strides[out_dim] = this.strides()[in_dim];
                     in_dim += 1;

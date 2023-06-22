@@ -21,7 +21,7 @@ where
     S: Shape,
     F: Fn(T) -> O,
 {
-    unsafe { Tensor::from_trusted_len_iter(t.iter().map(|t| f(t)), t.shape().clone()) }
+    unsafe { Tensor::from_trusted_len_iter(t.iter().map(f), t.shape().clone()) }
 }
 
 fn binary_op<T1, T2, O, S1, S2, F>(

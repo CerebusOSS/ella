@@ -55,7 +55,7 @@ pub trait Shape:
         for (out, s) in dst.slice_mut().iter_mut().zip(self.slice()) {
             *out = *s;
         }
-        for (out, s) in (&mut dst.slice_mut()[k..]).iter_mut().zip(other.slice()) {
+        for (out, s) in (dst.slice_mut()[k..]).iter_mut().zip(other.slice()) {
             if *out != *s {
                 if *out == 1 {
                     *out = *s;
@@ -449,56 +449,6 @@ impl<const D: usize> From<Const<D>> for Dyn {
         Dyn(value.0.as_slice().into())
     }
 }
-
-// #[derive(
-//     Debug,
-//     Clone,
-//     PartialEq,
-//     Eq,
-//     derive_more::From,
-//     derive_more::Into,
-//     derive_more::IntoIterator,
-//     derive_more::Index,
-//     derive_more::IndexMut,
-//     derive_more::AsRef,
-//     derive_more::AsMut,
-// )]
-// enum DynImpl {
-//     Stack {
-//         len: usize,
-//         values: [usize; 4],
-//     },
-//     Heap(Vec<usize>),
-// }
-
-// impl DynImpl {
-//     fn insert(&self, i: usize) -> Self {
-
-//     }
-// }
-
-// #[derive(Debug)]
-// pub struct ShapeIter<'a, S> {
-//     shape: &'a S,
-//     ndim: usize,
-//     i: usize,
-// }
-
-// impl<'a, S> Iterator for ShapeIter<'a, S>
-//     where S: Shape,
-// {
-//     type Item = usize;
-
-//     fn next(&mut self) -> Option<Self::Item> {
-//         if self.i < self.ndim {
-//             let i = self.i;
-//             self.i += 1;
-//             Some(self.shape[i])
-//         } else {
-//             None
-//         }
-//     }
-// }
 
 pub trait IntoShape: Debug + Clone {
     type Shape: Shape;

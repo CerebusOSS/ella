@@ -9,7 +9,7 @@ pub enum ValidityIter {
 
 impl ValidityIter {
     pub(crate) fn new(inner: MaskData) -> Self {
-        Self::as_constant(&inner).unwrap_or_else(|| Self::Values { inner, index: 0 })
+        Self::as_constant(&inner).unwrap_or(Self::Values { inner, index: 0 })
     }
 
     fn as_constant(inner: &MaskData) -> Option<Self> {
@@ -70,7 +70,7 @@ pub enum MaskIter<S: Shape> {
     },
 }
 
-impl<'a, S> MaskIter<S>
+impl<S> MaskIter<S>
 where
     S: Shape,
 {
@@ -84,7 +84,7 @@ where
     }
 }
 
-impl<'a, S> Iterator for MaskIter<S>
+impl<S> Iterator for MaskIter<S>
 where
     S: Shape,
 {
@@ -93,13 +93,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             MaskIter::Flat(inner) => inner.next(),
-            MaskIter::Shaped { inner, shape } => {
-                if let Some(index) = shape.next() {
-                    Some(inner.index(index))
-                } else {
-                    None
-                }
-            }
+            MaskIter::Shaped { inner, shape } => shape.next().map(|index| inner.index(index)),
         }
     }
 

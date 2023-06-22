@@ -106,6 +106,7 @@ where
         Ok(Tensor::new(self.values().clone(), to, new_stride))
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn broadcast_with<T2, S2>(
         &self,
         other: &Tensor<T2, S2>,
@@ -129,7 +130,7 @@ where
         let t2 = if shape.slice() == other.shape().slice() {
             other.as_shape::<<S as NdimMax<S2>>::Output>()
         } else {
-            other.broadcast_to(shape.clone())
+            other.broadcast_to(shape)
         }?;
         Ok((t1, t2))
     }

@@ -253,7 +253,7 @@ pub(crate) fn do_slice(axis: &mut usize, stride: &mut usize, slice: Slice) -> is
         stride_offset(start, *stride)
     };
 
-    let abs_step = step.abs() as usize;
+    let abs_step = step.unsigned_abs();
     *axis = if abs_step == 1 {
         m
     } else {
