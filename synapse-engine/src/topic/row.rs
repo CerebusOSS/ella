@@ -50,6 +50,11 @@ impl<R: RowFormat> RowSink<R> {
         self.inner.write(batch).await
     }
 
+    pub async fn close(&mut self) -> crate::Result<()> {
+        self.maybe_flush(true).await?;
+        Ok(())
+    }
+
     async fn maybe_flush(&mut self, closing: bool) -> crate::Result<()> {
         if self.builder.len() >= self.capacity || !self.builder.is_empty() && closing {
             self.flush().await?;

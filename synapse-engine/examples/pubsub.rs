@@ -3,9 +3,9 @@ use opentelemetry::{
     sdk::{trace, Resource},
     KeyValue,
 };
+use synapse_common::Duration;
 use synapse_engine as engine;
 use synapse_tensor as tensor;
-use synapse_time::Duration;
 use tensor::{Tensor, TensorType};
 use tokio_stream::StreamExt;
 use tracing_subscriber::{
@@ -60,25 +60,24 @@ async fn main() -> anyhow::Result<()> {
         .build();
 
     let pb = sy.topic("point").get_or_create(schema).await?.publish();
+    let mut sink = pb.rows(1)?;
 
-    let start = synapse_time::now();
+    let start = synapse_common::now();
     let end = start + Duration::seconds(5);
     let mut i = 0_i32;
-    while synapse_time::now() < end {
+    while synapse_common::now() < end {
         i += 1;
-        let data = tensor::frame!(
-            time = tensor::tensor![synapse_time::now()],
-            i = tensor::tensor![i],
-            dt = tensor::tensor![[
-                synapse_time::Duration::milliseconds(50),
-                synapse_time::Duration::milliseconds(2)
-            ]],
-            x = Tensor::linspace(i as f32, (i + 1) as f32, 512).unsqueeze(0),
-            y = tensor::tensor![["A".to_string(), "B".to_string()]],
-        );
-        pb.try_write(data)?;
+        sink.write((
+            synapse_common::now(),
+            i,
+            tensor::tensor![Duration::milliseconds(50), Duration::milliseconds(2)],
+            Tensor::linspace(i as f32, (i + 1) as f32, 512),
+            tensor::tensor!["A".to_string(), "B".to_string()],
+        ))
+        .await?;
     }
-    drop(pb);
+    sink.close().await?;
+    drop(sink);
 
     // let df = sy.query("select DISTINCT i from point").await?;
     // let mut sub = df.execute_stream().await?;

@@ -88,7 +88,7 @@ where
     }
 
     fn build_columns(&mut self) -> crate::Result<Vec<arrow::array::ArrayRef>> {
-        let values = Tensor::stack(Axis(0), &self.values)?;
+        let values = Tensor::stack(Axis(0), &std::mem::take(&mut self.values))?;
         Ok(vec![Column::new(String::new(), values).to_arrow()])
     }
 }

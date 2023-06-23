@@ -16,7 +16,7 @@ where
         if fields.len() != 1 {
             return Err(crate::Error::FieldCount(1, fields.len()));
         }
-        if (!T::NULLABLE && fields[0].is_nullable())
+        if (T::NULLABLE && !fields[0].is_nullable())
             || !(fields[0].data_type().contains(&T::TENSOR_TYPE.to_arrow()))
         {
             return Err(crate::Error::IncompatibleRow(fields[0].clone()));

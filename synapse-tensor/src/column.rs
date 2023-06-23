@@ -257,7 +257,7 @@ impl_make_column!(
     [u64 UInt64  UInt64Type]
     [f32 Float32 Float32Type]
     [f64 Float64 Float64Type]
-    [Duration Duration Int64Type]
+    [Duration Duration DurationNanosecondType]
     // [OffsetDateTime Timestamp Int64Type]
-    [Time Timestamp Int64Type]
+    [Time Timestamp TimestampNanosecondType]
 );

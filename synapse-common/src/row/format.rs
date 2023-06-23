@@ -25,8 +25,8 @@ pub trait RowBatchBuilder<R>: Debug + Clone + 'static {
     fn build_columns(&mut self) -> crate::Result<Vec<ArrayRef>>;
 
     fn build(&mut self, schema: SchemaRef) -> crate::Result<RecordBatch> {
-        let columns = self.build_columns()?;
         let opts = RecordBatchOptions::new().with_row_count(Some(self.len()));
+        let columns = self.build_columns()?;
         Ok(RecordBatch::try_new_with_options(schema, columns, &opts)?)
     }
 }

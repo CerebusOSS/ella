@@ -293,7 +293,7 @@ where
 }
 
 impl TensorValue for Duration {
-    type Array = PrimitiveArray<Int64Type>;
+    type Array = PrimitiveArray<DurationNanosecondType>;
     type Masked = Option<Self>;
     type Unmasked = Self;
 
@@ -357,7 +357,7 @@ impl TensorValue for Duration {
 }
 
 impl TensorValue for OffsetDateTime {
-    type Array = PrimitiveArray<Int64Type>;
+    type Array = PrimitiveArray<TimestampNanosecondType>;
     type Masked = Option<Self>;
     type Unmasked = Self;
 
@@ -420,7 +420,7 @@ impl TensorValue for OffsetDateTime {
 }
 
 impl TensorValue for Time {
-    type Array = PrimitiveArray<Int64Type>;
+    type Array = PrimitiveArray<TimestampNanosecondType>;
     type Masked = Option<Self>;
     type Unmasked = Self;
 
@@ -450,6 +450,7 @@ impl TensorValue for Time {
         I: IntoIterator<Item = Self::Masked>,
     {
         PrimitiveArray::from_iter(iter.into_iter().map(|t| t.map(|t| t.timestamp())))
+            .with_data_type(TensorType::Timestamp.to_arrow())
     }
 
     fn from_vec(values: Vec<Self>) -> Self::Array {
@@ -461,6 +462,7 @@ impl TensorValue for Time {
         I: IntoIterator<Item = Self::Masked>,
     {
         PrimitiveArray::from_trusted_len_iter(iter.into_iter().map(|t| t.map(|t| t.timestamp())))
+            .with_data_type(TensorType::Timestamp.to_arrow())
     }
 
     fn slice(array: &Self::Array, offset: usize, length: usize) -> Self::Array {
