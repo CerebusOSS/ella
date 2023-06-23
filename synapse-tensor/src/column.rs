@@ -68,7 +68,7 @@ impl Column {
         column_to_array(self)
     }
 
-    pub fn arrow_type(&self) -> DataType {
+    fn arrow_type(&self) -> DataType {
         self.data.arrow_type()
     }
 }
@@ -86,8 +86,18 @@ pub trait ColumnData: Debug {
         } else {
             None
         };
+        let dtype = self.tensor_type();
 
-        tensor_schema(self.tensor_type(), row_shape)
+        if let Some(row_shape) = row_shape {
+            let row_len = row_shape.size();
+
+            DataType::FixedSizeList(
+                Arc::new(Field::new("item", dtype.to_arrow(), true)),
+                row_len as i32,
+            )
+        } else {
+            dtype.to_arrow()
+        }
     }
 }
 
@@ -117,16 +127,23 @@ where
     }
 }
 
-pub fn tensor_schema(dtype: TensorType, row_shape: Option<Dyn>) -> DataType {
+pub fn tensor_schema(
+    name: String,
+    dtype: TensorType,
+    row_shape: Option<Dyn>,
+    nullable: bool,
+) -> Field {
     if let Some(row_shape) = row_shape {
         let row_len = row_shape.size();
 
-        DataType::FixedSizeList(
+        let dtype = DataType::FixedSizeList(
             Arc::new(Field::new("item", dtype.to_arrow(), true)),
             row_len as i32,
-        )
+        );
+        let ext = ExtensionType::tensor(row_shape);
+        Field::new(name, dtype, nullable).with_metadata(ext.encode())
     } else {
-        dtype.to_arrow()
+        Field::new(name, dtype.to_arrow(), nullable)
     }
 }
 
