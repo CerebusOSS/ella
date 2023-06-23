@@ -6,7 +6,7 @@ use arrow::{
 };
 
 use crate::{arrow::ExtensionType, Axis, Dyn, RemoveAxis, Shape, Tensor, TensorType, TensorValue};
-use synapse_time::{Duration, Time};
+use synapse_common::{Duration, Time};
 
 #[derive(Debug, Clone)]
 pub struct Column {
@@ -62,6 +62,15 @@ impl Column {
         self.name = name.into();
         self
     }
+
+    #[inline]
+    pub fn to_arrow(&self) -> ArrayRef {
+        column_to_array(self)
+    }
+
+    pub fn arrow_type(&self) -> DataType {
+        self.data.arrow_type()
+    }
 }
 
 pub trait ColumnData: Debug {
@@ -70,6 +79,16 @@ pub trait ColumnData: Debug {
     fn strides(&self) -> Dyn;
     fn nullable(&self) -> bool;
     fn data(&self) -> ArrayRef;
+
+    fn arrow_type(&self) -> DataType {
+        let row_shape = if self.shape().ndim() > 1 {
+            Some(self.shape().remove_axis(Axis(0)))
+        } else {
+            None
+        };
+
+        tensor_schema(self.tensor_type(), row_shape)
+    }
 }
 
 impl<T, S> ColumnData for Tensor<T, S>
@@ -98,23 +117,16 @@ where
     }
 }
 
-pub fn tensor_schema(
-    name: String,
-    dtype: TensorType,
-    row_shape: Option<Dyn>,
-    nullable: bool,
-) -> Field {
+pub fn tensor_schema(dtype: TensorType, row_shape: Option<Dyn>) -> DataType {
     if let Some(row_shape) = row_shape {
         let row_len = row_shape.size();
 
-        let dtype = DataType::FixedSizeList(
+        DataType::FixedSizeList(
             Arc::new(Field::new("item", dtype.to_arrow(), true)),
             row_len as i32,
-        );
-        let ext = ExtensionType::tensor(row_shape);
-        Field::new(name, dtype, nullable).with_metadata(ext.encode())
+        )
     } else {
-        Field::new(name, dtype.to_arrow(), nullable)
+        dtype.to_arrow()
     }
 }
 
@@ -137,12 +149,7 @@ where
 }
 
 pub(crate) fn column_to_field(col: &Column) -> Field {
-    let row_shape = if col.shape().ndim() > 1 {
-        Some(col.shape().remove_axis(Axis(0)))
-    } else {
-        None
-    };
-    tensor_schema(col.name().clone(), col.dtype(), row_shape, col.nullable())
+    Field::new(col.name(), col.arrow_type(), col.nullable())
 }
 
 pub(crate) fn column_to_array(col: &Column) -> ArrayRef {

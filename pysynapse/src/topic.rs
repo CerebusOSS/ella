@@ -19,7 +19,7 @@ impl PyTopic {
         }
     }
 
-    fn close(&self, py: Python) -> crate::Result<()> {
+    fn close(&self, py: Python) -> synapse::Result<()> {
         wait_for_future(py, self.topic.close())?;
         Ok(())
     }

@@ -2,7 +2,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use arrow::{array::Array, buffer::NullBuffer};
 
-use crate::{mask::MaskData, tensor_value::TensorValue};
+use crate::{mask::MaskData, TensorValue};
 
 #[derive(Debug)]
 pub struct TensorData<T, A> {

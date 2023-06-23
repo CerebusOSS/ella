@@ -230,17 +230,21 @@ impl ShardManager {
             if let Some(h) = handle.as_mut() {
                 if h.is_finished() {
                     let res = match h.now_or_never().expect("expected worker to be finished") {
-                        Err(e) => Err(crate::Error::worker_panic("shard_writer", &e.into_panic())),
+                        Err(e) => Err(crate::EngineError::worker_panic(
+                            "shard_writer",
+                            &e.into_panic(),
+                        )
+                        .into()),
                         Ok(Err(e)) => Err(e),
-                        Ok(Ok(_)) => Err(crate::Error::TableClosed),
+                        Ok(Ok(_)) => Err(crate::EngineError::TableClosed.into()),
                     };
                     *handle = None;
                     res
                 } else {
-                    Err(crate::Error::TableClosed)
+                    Err(crate::EngineError::TableClosed.into())
                 }
             } else {
-                Err(crate::Error::TableClosed)
+                Err(crate::EngineError::TableClosed.into())
             }
         } else {
             Ok(out)

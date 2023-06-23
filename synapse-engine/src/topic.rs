@@ -1,10 +1,12 @@
 mod channel;
 mod config;
+mod row;
 mod rw;
 mod shard;
 
 pub use channel::{Publisher, Subscriber, TopicChannel};
 pub use config::TopicConfig;
+pub use row::RowSink;
 pub use rw::RwBuffer;
 pub(crate) use shard::compact_shards;
 pub use shard::ShardManager;
@@ -18,7 +20,7 @@ use datafusion::{
     error::Result,
     execution::context::SessionState,
     logical_expr::TableType,
-    physical_plan::{project_schema, union::UnionExec, ExecutionPlan},
+    physical_plan::{insert::InsertExec, project_schema, union::UnionExec, ExecutionPlan},
     prelude::Expr,
 };
 
@@ -150,15 +152,12 @@ impl TableProvider for Topic {
         )?))
     }
 
-    // async fn insert_into(&self, state: &SessionState, input: Arc<dyn ExecutionPlan>) -> Result<Arc<dyn ExecutionPlan>> {
-    //     // let plan = state.create_physical_plan(input).await?;
-
-    //     // let plan = CoalescePartitionsExec::new(plan);
-
-    //     let mut stream = input.execute(0, state.task_ctx())?;
-    //     while let Some(batch) = stream.try_next().await? {
-    //         self.publish.insert(batch)?;
-    //     }
-    //     Ok(())
-    // }
+    async fn insert_into(
+        &self,
+        _state: &SessionState,
+        input: Arc<dyn ExecutionPlan>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        let sink = Arc::new(self.publish());
+        Ok(Arc::new(InsertExec::new(input, sink)))
+    }
 }

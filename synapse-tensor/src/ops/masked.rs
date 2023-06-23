@@ -1,4 +1,4 @@
-use crate::{tensor_value::MaskedValue, Const, Mask, Shape, Tensor, TensorValue};
+use crate::{Const, Mask, MaskedValue, Shape, Tensor, TensorValue};
 
 pub trait AsMask<S: Shape> {
     fn as_mask(&self) -> Mask<S>;

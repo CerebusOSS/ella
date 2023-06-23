@@ -50,13 +50,15 @@ where
         self.shape.is_standard_layout(&self.strides)
     }
 
+    #[doc(hidden)]
     #[inline]
-    pub(crate) fn values(&self) -> &TensorData<T, T::Array> {
+    pub fn values(&self) -> &TensorData<T, T::Array> {
         &self.values
     }
 
+    #[doc(hidden)]
     #[inline]
-    pub(crate) fn into_values(self) -> TensorData<T, T::Array> {
+    pub fn into_values(self) -> TensorData<T, T::Array> {
         self.values
     }
 

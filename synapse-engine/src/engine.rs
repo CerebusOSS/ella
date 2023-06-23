@@ -5,7 +5,7 @@ use std::{
 };
 
 use datafusion::prelude::{DataFrame, SessionConfig, SessionContext};
-use synapse_time::Duration;
+use synapse_common::Duration;
 
 use crate::{
     catalog::{Catalog, TopicId},
@@ -122,6 +122,10 @@ impl Engine {
             #[cfg(feature = "metrics")]
             metrics,
         })
+    }
+
+    pub fn ctx(&self) -> &Arc<SynapseContext> {
+        &self.ctx
     }
 
     pub fn topic<T>(&self, topic: T) -> TopicRef<'_>

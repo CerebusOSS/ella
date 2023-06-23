@@ -78,7 +78,7 @@ where
         let to: O = shape.into_shape();
         let from = self.shape();
         if to.ndim() < from.ndim() {
-            return Err(crate::Error::Broadcast(from.as_dyn(), to.as_dyn()));
+            return Err(crate::ShapeError::broadcast(from.as_ref(), to.as_ref()).into());
         }
 
         let mut new_stride = to.clone();
@@ -96,7 +96,7 @@ where
             } else if *er == 1 {
                 *dr = 0;
             } else {
-                return Err(crate::Error::Broadcast(from.as_dyn(), to.as_dyn()));
+                return Err(crate::ShapeError::broadcast(from.as_ref(), to.as_ref()).into());
             }
         }
 

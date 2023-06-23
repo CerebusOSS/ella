@@ -87,8 +87,8 @@ where
 
         match self.send.try_send((count, Box::pin(f(values)))) {
             Ok(_) => Ok(()),
-            Err(TrySendError::Closed(_)) => Err(crate::Error::TableClosed),
-            Err(TrySendError::Full(_)) => Err(crate::Error::TableQueueFull),
+            Err(TrySendError::Closed(_)) => Err(crate::EngineError::TableClosed.into()),
+            Err(TrySendError::Full(_)) => Err(crate::EngineError::TableQueueFull.into()),
         }
     }
 

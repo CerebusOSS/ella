@@ -1,10 +1,10 @@
 [workspace]
 members = [
-    "synapse",
+    "synapse-common",
     "synapse-tensor",
     "synapse-engine",
-    "synapse-time",
-    "synapse-row",
+    "synapse-server",
+    "synapse",
     "pysynapse",
 ]
 resolver = "2"
@@ -15,7 +15,7 @@ edition = "2021"
 authors = ["Dexter Duckworth <dexterduck@users.noreply.github.com>"]
 
 [workspace.dependencies]
-synapse-time = { path = "./synapse-time" }
+synapse-common = { path = "./synapse-common" }
 synapse-tensor = { path = "./synapse-tensor" }
 synapse-engine = { path = "./synapse-engine" }
 synapse = { path = "./synapse" }
@@ -31,6 +31,7 @@ paste = "1.0.12"
 datafusion = "26.0.0"
 arrow = { version = "41.0.0" }
 arrow-schema = { version = "41.0.0", features = ["serde"] }
+arrow-flight = { version = "41.0.0", features = ["flight-sql-experimental"] }
 parquet = "41.0.0"
 tracing = "0.1.37"
 tokio = { version = "1.27.0" }
@@ -48,6 +49,11 @@ opentelemetry-jaeger = { version = "0.18.0", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.12.0", features = ["metrics"] }
 prometheus-client = { version = "0.21.1", features = [] }
 hyper = { version = "0.14.26", features = ["server", "http2"] }
+async-trait = "0.1.62"
+tonic = "0.9.2"
+prost = "0.11.9"
+dashmap = "5.4.0"
+url = { version = "2.3.1", features = ["serde"] }
 
 [patch.crates-io]
 datafusion = { git = "https://github.com/apache/arrow-datafusion", rev = "1d3860dc813725b5a987aae4c3a8f4a7b2bfdb2d" }

@@ -95,15 +95,15 @@ impl RwBuffer {
     pub async fn insert(&self, batch: RecordBatch) -> crate::Result<()> {
         match self.input.send_async(batch).await {
             Ok(_) => Ok(()),
-            Err(_) => Err(crate::Error::TableClosed),
+            Err(_) => Err(crate::EngineError::TableClosed.into()),
         }
     }
 
     pub fn try_insert(&self, batch: RecordBatch) -> crate::Result<()> {
         match self.input.try_send(batch) {
             Ok(_) => Ok(()),
-            Err(TrySendError::Disconnected(_)) => Err(crate::Error::TableClosed),
-            Err(TrySendError::Full(_)) => Err(crate::Error::TableQueueFull),
+            Err(TrySendError::Disconnected(_)) => Err(crate::EngineError::TableClosed.into()),
+            Err(TrySendError::Full(_)) => Err(crate::EngineError::TableQueueFull.into()),
         }
     }
 

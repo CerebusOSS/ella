@@ -7,6 +7,8 @@ pub use index::{Flat, IndexValue, Indexer};
 pub use iter::ShapeIndexIter;
 pub use max::NdimMax;
 
+pub(crate) use index::IndexUnchecked;
+
 use smallvec::SmallVec;
 use std::{fmt::Debug, ops::IndexMut};
 
@@ -60,7 +62,8 @@ pub trait Shape:
                 if *out == 1 {
                     *out = *s;
                 } else if *s != 1 {
-                    return Err(crate::Error::Broadcast(self.as_dyn(), other.as_dyn()));
+                    return Err(crate::ShapeError::broadcast(self.as_ref(), other.as_ref()).into());
+                    // return Err(crate::Error::Broadcast(self.as_dyn(), other.as_dyn()));
                 }
             }
         }
@@ -158,7 +161,7 @@ pub trait Shape:
             }
             Ok(s)
         } else {
-            Err(crate::Error::shape(shape.as_dyn(), s.ndim()))
+            Err(crate::ShapeError::ndim(shape.ndim(), s.ndim()).into())
         }
     }
 

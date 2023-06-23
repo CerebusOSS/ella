@@ -155,18 +155,19 @@ impl JobHandle {
                         .now_or_never()
                         .expect("expected worker to be complete")
                     {
-                        Err(e) => Err(crate::Error::worker_panic(
+                        Err(e) => Err(crate::EngineError::worker_panic(
                             "single_shard_writer",
                             &e.into_panic(),
-                        )),
+                        )
+                        .into()),
                         Ok(Err(e)) => Err(e),
                         Ok(Ok(_)) => unreachable!(),
                     }
                 } else {
-                    Err(crate::Error::TableQueueFull)
+                    Err(crate::EngineError::TableQueueFull.into())
                 }
             } else {
-                Err(crate::Error::TableClosed)
+                Err(crate::EngineError::TableClosed.into())
             }
         } else {
             Ok(())
@@ -179,10 +180,11 @@ impl JobHandle {
             match handle.await {
                 Ok(Ok(())) => Ok(()),
                 Ok(Err(e)) => Err(e),
-                Err(e) => Err(crate::Error::worker_panic(
+                Err(e) => Err(crate::EngineError::worker_panic(
                     "single_shard_worker",
                     &e.into_panic(),
-                )),
+                )
+                .into()),
             }
         } else {
             Ok(())

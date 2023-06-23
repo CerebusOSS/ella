@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::datatypes::{DataType, TimeUnit};
+use datafusion::arrow::datatypes::{DataType, TimeUnit};
 
 #[derive(
     Debug,

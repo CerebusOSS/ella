@@ -3,6 +3,7 @@ use std::sync::Arc;
 use arrow::pyarrow::ToPyArrow;
 use pyo3::prelude::*;
 use synapse::{
+    common::error::PySynapseError,
     engine::Schema,
     tensor::{Dyn, TensorType},
 };
@@ -143,7 +144,7 @@ impl From<PySchema> for Schema {
 #[pymethods]
 impl PySchema {
     #[new]
-    fn new(fields: Vec<PyField>) -> crate::Result<Self> {
+    fn new(fields: Vec<PyField>) -> synapse::Result<Self> {
         let mut builder = Schema::builder();
         for f in &fields {
             let mut field = builder
@@ -160,7 +161,7 @@ impl PySchema {
                 } else if index == "descending" {
                     false
                 } else {
-                    return Err(crate::Error::InvalidIndexMode(index.clone()));
+                    return Err(PySynapseError::InvalidIndexMode(index.clone()).into());
                 };
                 field = field.index(ascending);
             }
@@ -177,6 +178,6 @@ impl PySchema {
 }
 
 #[pyfunction]
-fn schema(fields: Vec<PyField>) -> crate::Result<PySchema> {
+fn schema(fields: Vec<PyField>) -> synapse::Result<PySchema> {
     PySchema::new(fields)
 }

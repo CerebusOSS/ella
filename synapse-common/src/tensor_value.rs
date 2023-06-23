@@ -1,10 +1,10 @@
 use crate::TensorType;
-use arrow::{
+use crate::{Duration, OffsetDateTime, Time};
+use datafusion::arrow::{
     array::{Array, ArrayData, BooleanArray, PrimitiveArray, StringArray},
     datatypes::*,
 };
 use std::fmt::{Debug, Write};
-use synapse_time::{Duration, OffsetDateTime, Time};
 use time::format_description::well_known::Rfc3339;
 
 pub trait TensorValue: Debug + Clone + PartialEq + PartialOrd + 'static {

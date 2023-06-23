@@ -1,6 +1,9 @@
 use pyo3::prelude::*;
 
-use synapse::engine::{Engine, EngineConfig};
+use synapse::{
+    common::error::PySynapseError,
+    engine::{Engine, EngineConfig},
+};
 
 use crate::{data_types::PySchema, wait_for_future, PyTopic};
 
@@ -20,7 +23,7 @@ pub struct PyEngine {
 impl PyEngine {
     #[pyo3(signature = (root, config=None))]
     #[new]
-    fn new(py: Python, root: String, config: Option<PyEngineConfig>) -> crate::Result<Self> {
+    fn new(py: Python, root: String, config: Option<PyEngineConfig>) -> synapse::Result<Self> {
         let config = if let Some(c) = config {
             c.cfg
         } else {
@@ -30,19 +33,24 @@ impl PyEngine {
         Ok(Self { engine })
     }
 
-    fn shutdown(&self, py: Python) -> crate::Result<()> {
+    fn shutdown(&self, py: Python) -> synapse::Result<()> {
         Ok(wait_for_future(py, self.engine.shutdown())?)
     }
 
     #[pyo3(signature = (name, schema=None))]
-    fn topic(&self, py: Python, name: String, schema: Option<PySchema>) -> crate::Result<PyTopic> {
+    fn topic(
+        &self,
+        py: Python,
+        name: String,
+        schema: Option<PySchema>,
+    ) -> synapse::Result<PyTopic> {
         let topic = if let Some(schema) = schema {
             wait_for_future(py, self.engine.topic(name).get_or_create(schema.into()))?
         } else {
             self.engine
                 .topic(&name)
                 .get()
-                .ok_or_else(|| crate::Error::TopicNotFound(name))?
+                .ok_or_else(|| PySynapseError::TopicNotFound(name))?
         };
         Ok(topic.into())
     }
@@ -57,7 +65,7 @@ impl PyEngine {
         _exc_type: &PyAny,
         _exc_value: &PyAny,
         _traceback: &PyAny,
-    ) -> crate::Result<()> {
+    ) -> synapse::Result<()> {
         self.shutdown(py)
     }
 }
@@ -68,6 +76,6 @@ pub(crate) fn runtime(
     py: Python,
     root: String,
     config: Option<PyEngineConfig>,
-) -> crate::Result<PyEngine> {
+) -> synapse::Result<PyEngine> {
     PyEngine::new(py, root, config)
 }

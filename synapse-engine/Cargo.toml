@@ -8,7 +8,7 @@ authors.workspace = true
 datafusion = { workspace = true }
 arrow-schema = { workspace = true }
 thiserror = { workspace = true }
-synapse-time = { workspace = true }
+synapse-common = { workspace = true }
 synapse-tensor = { workspace = true }
 
 tokio = { workspace = true, features = ["sync", "rt-multi-thread"] }
@@ -20,21 +20,22 @@ uuid = { workspace = true }
 once_cell = { workspace = true }
 object_store = { workspace = true }
 thrift = { workspace = true }
+async-trait = { workspace = true }
+dashmap = { workspace = true }
+strum = { workspace = true }
+url = { workspace = true }
 
-pyo3 = { workspace = true, optional = true }
 prometheus-client = { workspace = true, optional = true }
 hyper = { workspace = true, optional = true }
 
-async-trait = "0.1.62"
+
 num-traits = "0.2.15"
 tokio-stream = { version = "0.1.12", features = ["sync"] }
 tokio-util = "0.7.7"
-dashmap = "5.4.0"
+
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 
-url = { version = "2.3.1", features = ["serde"] }
-strum = { workspace = true }
 flume = "0.10.14"
 
 [dev-dependencies]
@@ -46,4 +47,4 @@ opentelemetry-otlp = { workspace = true }
 [features]
 default = ["metrics"]
 metrics = ["dep:prometheus-client", "dep:hyper"]
-pyo3 = ["dep:pyo3", "synapse-tensor/pyo3", "datafusion/pyarrow"]
+pyo3 = ["synapse-common/pyo3", "synapse-tensor/pyo3", "datafusion/pyarrow"]

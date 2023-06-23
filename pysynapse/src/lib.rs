@@ -4,10 +4,7 @@ mod topic;
 
 use futures::Future;
 use once_cell::sync::OnceCell;
-use pyo3::{
-    exceptions::{PyLookupError, PyValueError},
-    prelude::*,
-};
+use pyo3::prelude::*;
 
 pub use engine::{PyEngine, PyEngineConfig};
 pub use synapse;
@@ -29,32 +26,6 @@ fn pysynapse(py: Python<'_>, m: &PyModule) -> PyResult<()> {
 
     data_types::add_module(py, m)?;
     Ok(())
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("synapse engine error")]
-    Engine(#[from] synapse::engine::Error),
-    #[error("synapse tensor error")]
-    Tensor(#[from] synapse::tensor::Error),
-    #[error("no topic with id '{0}' (to create the topic pass a schema)")]
-    TopicNotFound(String),
-    #[error("expected one of 'ascending' or 'descending' for index, got '{0}'")]
-    InvalidIndexMode(String),
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
-impl From<Error> for PyErr {
-    fn from(err: Error) -> Self {
-        use Error::*;
-        match err {
-            Engine(err) => err.into(),
-            Tensor(err) => err.into(),
-            TopicNotFound(err) => PyLookupError::new_err(err),
-            InvalidIndexMode(err) => PyValueError::new_err(err),
-        }
-    }
 }
 
 pub(crate) fn tokio_runtime() -> &'static tokio::runtime::Runtime {

@@ -1,5 +1,7 @@
 use crate::{
-    shape::ShapeIndexIter, tensor::ShapedIter, Axis, RemoveAxis, Shape, Tensor, TensorValue,
+    shape::{IndexUnchecked, ShapeIndexIter},
+    tensor::ShapedIter,
+    Axis, RemoveAxis, Shape, Tensor, TensorValue,
 };
 
 #[macro_export]
@@ -37,14 +39,14 @@ where
         let mut shape = tensors[0].shape().clone();
         let ax = axis.index(&shape);
         if ax >= shape.ndim() {
-            return Err(crate::Error::AxisOutOfBounds(axis, shape.ndim()));
+            return Err(crate::Error::AxisOutOfBounds(axis.0, shape.ndim()));
         }
         let common_shape = shape.remove_axis(axis);
         if tensors
             .iter()
             .any(|t| t.shape().remove_axis(axis) != common_shape)
         {
-            return Err(crate::Error::IncompatibleShape(common_shape.as_dyn()));
+            return Err(crate::ShapeError::incompatible(common_shape.as_ref()).into());
         }
         let ax_size = tensors.iter().fold(0, |sz, t| sz + t.shape()[ax]);
         shape[ax] = ax_size;
@@ -63,21 +65,18 @@ where
         Ok(t)
     }
 
-    pub fn stack(axis: Axis, tensors: &[Tensor<T, S>]) -> crate::Result<Tensor<T, S::Larger>>
-    where
-        S::Larger: Shape<Smaller = S>,
-    {
+    pub fn stack(axis: Axis, tensors: &[Tensor<T, S>]) -> crate::Result<Tensor<T, S::Larger>> {
         if tensors.is_empty() {
             return Err(crate::Error::EmptyList);
         }
         let common_shape = tensors[0].shape();
         let ax = axis.insert_index(common_shape);
         if ax > common_shape.ndim() {
-            return Err(crate::Error::AxisOutOfBounds(axis, common_shape.ndim()));
+            return Err(crate::Error::AxisOutOfBounds(axis.0, common_shape.ndim()));
         }
         let mut shape = common_shape.insert_axis(axis);
         if tensors.iter().any(|t| t.shape() != common_shape) {
-            return Err(crate::Error::IncompatibleShape(common_shape.as_dyn()));
+            return Err(crate::ShapeError::incompatible(common_shape.as_ref()).into());
         }
 
         shape[ax] = tensors.len();
@@ -175,7 +174,6 @@ impl<'a, T, S> CombineStack<'a, T, S>
 where
     T: TensorValue,
     S: Shape,
-    S::Larger: Shape<Smaller = S>,
 {
     fn new(tensors: &'a [Tensor<T, S>], shape: S::Larger, axis: usize) -> Self {
         Self {
@@ -190,7 +188,6 @@ impl<'a, T, S> Iterator for CombineStack<'a, T, S>
 where
     T: TensorValue,
     S: Shape,
-    S::Larger: Shape<Smaller = S>,
 {
     type Item = T;
 
@@ -198,7 +195,7 @@ where
         let idx = self.shape.next()?;
         let tensor = idx[self.axis];
         let idx = idx.remove_axis(self.axis.into());
-        Some(self.tensors[tensor].index(idx))
+        Some(self.tensors[tensor].index(IndexUnchecked(idx.slice())))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -210,7 +207,6 @@ impl<'a, T, S> ExactSizeIterator for CombineStack<'a, T, S>
 where
     T: TensorValue,
     S: Shape,
-    S::Larger: Shape<Smaller = S>,
 {
     fn len(&self) -> usize {
         self.shape.len()

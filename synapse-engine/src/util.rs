@@ -4,7 +4,7 @@ pub mod work_queue;
 use std::{collections::HashSet, sync::Arc};
 
 use futures::TryStreamExt;
-use synapse_time::Duration;
+use synapse_common::Duration;
 use tokio::{
     sync::{Mutex, Notify},
     task::JoinHandle,

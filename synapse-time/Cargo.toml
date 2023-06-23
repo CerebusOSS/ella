@@ -1,9 +1,0 @@
-[package]
-name = "synapse-time"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-time = { workspace = true }
-serde = { workspace = true }
-derive_more = { workspace = true }

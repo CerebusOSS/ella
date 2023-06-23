@@ -171,7 +171,11 @@ impl<'a, T> FieldBuilder<'a, T> {
 
 impl<'a> FieldBuilder<'a, TensorType> {
     pub fn finish(self) -> &'a mut SchemaBuilder {
-        let field = tensor_schema(self.name, self.data_type, self.row_shape, !self.required);
+        let field = Field::new(
+            self.name,
+            tensor_schema(self.data_type, self.row_shape),
+            !self.required,
+        );
         self.schema.fields.push(field);
         if let Some(index) = self.index {
             self.schema.index_columns.push(index);

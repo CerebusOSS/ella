@@ -1,5 +1,5 @@
 use std::{
-    fmt::Debug,
+    fmt::{Debug, Display},
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -11,21 +11,24 @@ use datafusion::{
     arrow::record_batch::RecordBatch,
     datasource::TableProvider,
     error::{DataFusionError, Result},
-    execution::context::SessionState,
+    execution::{context::SessionState, TaskContext},
     logical_expr::TableType,
     physical_expr::PhysicalSortExpr,
     physical_plan::{
-        project_schema, stream::RecordBatchStreamAdapter, ExecutionPlan, Partitioning, Statistics,
+        insert::DataSink, project_schema, stream::RecordBatchStreamAdapter, ExecutionPlan,
+        Partitioning, SendableRecordBatchStream, Statistics,
     },
     prelude::Expr,
 };
-use futures::{FutureExt, Stream, StreamExt};
+use futures::{FutureExt, Stream, StreamExt, TryStreamExt};
+use synapse_common::row::RowFormat;
+// use synapse_row::RowFormat;
 use tokio::sync::{broadcast, Notify};
 use tokio_util::sync::ReusableBoxFuture;
 
 use crate::{catalog::TopicId, ArrowSchema, Schema};
 
-use super::{config::ChannelConfig, RwBuffer};
+use super::{config::ChannelConfig, RowSink, RwBuffer};
 
 pub struct TopicChannel {
     topic: TopicId,
@@ -112,6 +115,12 @@ impl Debug for Publisher {
     }
 }
 
+impl Display for Publisher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "publisher ({})", self.topic)
+    }
+}
+
 impl Clone for Publisher {
     fn clone(&self) -> Self {
         self.active.fetch_add(1, Ordering::Release);
@@ -136,6 +145,14 @@ impl Drop for Publisher {
 }
 
 impl Publisher {
+    pub fn rows<R: RowFormat>(self, buffer: usize) -> crate::Result<RowSink<R>> {
+        RowSink::try_new(self, buffer)
+    }
+
+    pub fn schema(&self) -> &Arc<Schema> {
+        &self.schema
+    }
+
     pub fn try_write<R>(&self, batch: R) -> crate::Result<()>
     where
         R: Into<RecordBatch>,
@@ -156,6 +173,25 @@ impl Publisher {
         self.rw.insert(batch.clone()).await?;
         let _ = self.subs.send(batch);
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl DataSink for Publisher {
+    async fn write_all(
+        &self,
+        mut data: SendableRecordBatchStream,
+        _ctx: &Arc<TaskContext>,
+    ) -> Result<u64> {
+        let mut rows = 0;
+
+        while let Some(batch) = data.try_next().await? {
+            rows += batch.num_rows();
+            self.write(batch)
+                .await
+                .map_err(|err| DataFusionError::External(Box::new(err)))?;
+        }
+        Ok(rows as u64)
     }
 }
 

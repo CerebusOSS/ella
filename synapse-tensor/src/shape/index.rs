@@ -220,3 +220,56 @@ macro_rules! impl_index_value {
 
 impl_index_value!(signed   [i32 i64 isize]);
 impl_index_value!(unsigned [u32 u64 usize]);
+
+impl<T: IndexValue> Indexer<Dyn> for &[T] {
+    #[inline]
+    fn index_checked(&self, shape: &Dyn, strides: &Dyn) -> Option<isize> {
+        IndexUnchecked(self).index_checked(shape, strides)
+    }
+
+    #[inline]
+    fn index_unchecked(&self, shape: &Dyn, strides: &Dyn) -> isize {
+        IndexUnchecked(self).index_unchecked(shape, strides)
+    }
+}
+
+impl<T: IndexValue> Indexer<Dyn> for Vec<T> {
+    #[inline]
+    fn index_checked(&self, shape: &Dyn, strides: &Dyn) -> Option<isize> {
+        self.as_slice().index_checked(shape, strides)
+    }
+
+    #[inline]
+    fn index_unchecked(&self, shape: &Dyn, strides: &Dyn) -> isize {
+        self.as_slice().index_unchecked(shape, strides)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct IndexUnchecked<'a, T>(pub &'a [T]);
+
+impl<'a, T, S> Indexer<S> for IndexUnchecked<'a, T>
+where
+    T: IndexValue,
+    S: Shape,
+{
+    fn index_checked(&self, shape: &S, strides: &S) -> Option<isize> {
+        let mut offset = 0;
+        let iter = shape.slice().iter().zip(self.0).zip(strides.slice());
+        for ((&dim, &i), &s) in iter {
+            let i = i.abs_index(dim);
+            offset += stride_offset_checked(dim, s, i)?;
+        }
+        Some(offset)
+    }
+
+    fn index_unchecked(&self, shape: &S, strides: &S) -> isize {
+        let mut offset = 0;
+        let iter = shape.slice().iter().zip(self.0).zip(strides.slice());
+        for ((&dim, &i), &s) in iter {
+            let i = i.abs_index(dim);
+            offset += stride_offset(i, s);
+        }
+        offset
+    }
+}

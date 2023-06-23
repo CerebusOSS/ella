@@ -1,7 +1,0 @@
-[package]
-name = "synapse-row"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-
-[dependencies]
