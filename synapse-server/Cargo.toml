@@ -1,0 +1,34 @@
+[package]
+name = "synapse-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+synapse-engine = { workspace = true }
+synapse-common = { workspace = true, features = ["flight"] }
+
+arrow-flight = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+futures = { workspace = true }
+uuid = { workspace = true }
+dashmap = { workspace = true }
+datafusion = { workspace = true }
+once_cell = { workspace = true }
+tracing = { workspace = true }
+flume = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt-multi-thread", "signal"] }
+tower-http = { version = "0.4.1", features = ["trace"] }
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+anyhow = "1.0.70"
+tracing-opentelemetry = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+synapse-tensor = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }
+protobuf-src = { workspace = true }

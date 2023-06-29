@@ -1,5 +1,6 @@
 use arrow::{pyarrow::FromPyArrow, record_batch::RecordBatch};
-use pyo3::prelude::*;
+use futures::{FutureExt, SinkExt};
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::sync::Arc;
 use synapse::engine::{topic::Publisher, Topic};
 
@@ -15,7 +16,7 @@ pub struct PyTopic {
 impl PyTopic {
     fn publish(&self) -> PyPublisher {
         PyPublisher {
-            inner: Arc::new(self.topic.publish()),
+            inner: self.topic.publish(),
         }
     }
 
@@ -28,20 +29,23 @@ impl PyTopic {
 #[derive(Clone, derive_more::From, derive_more::Into)]
 #[pyclass(name = "Publisher")]
 pub struct PyPublisher {
-    inner: Arc<Publisher>,
+    inner: Publisher,
 }
 
 #[pymethods]
 impl PyPublisher {
-    fn try_write(&self, batch: &PyAny) -> PyResult<()> {
+    fn try_write(&mut self, batch: &PyAny) -> PyResult<()> {
         let batch = RecordBatch::from_pyarrow(batch)?;
-        self.inner.try_write(batch)?;
-        Ok(())
+        match self.inner.send(batch).now_or_never() {
+            Some(Ok(_)) => Ok(()),
+            Some(Err(err)) => Err(err.into()),
+            None => Err(PyRuntimeError::new_err("failed to write to table").into()),
+        }
     }
 
-    fn write(&self, py: Python, batch: &PyAny) -> PyResult<()> {
+    fn write(&mut self, py: Python, batch: &PyAny) -> PyResult<()> {
         let batch = RecordBatch::from_pyarrow(batch)?;
-        wait_for_future(py, self.inner.write(batch))?;
+        wait_for_future(py, self.inner.send(batch))?;
         Ok(())
     }
 }

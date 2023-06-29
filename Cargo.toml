@@ -51,9 +51,13 @@ prometheus-client = { version = "0.21.1", features = [] }
 hyper = { version = "0.14.26", features = ["server", "http2"] }
 async-trait = "0.1.62"
 tonic = "0.9.2"
+tonic-build = "0.9.2"
 prost = "0.11.9"
+protobuf-src = "1.1.0"
 dashmap = "5.4.0"
 url = { version = "2.3.1", features = ["serde"] }
+flume = "0.10.14"
+pin-project-lite = "0.2.9"
 
 [patch.crates-io]
 datafusion = { git = "https://github.com/apache/arrow-datafusion", rev = "1d3860dc813725b5a987aae4c3a8f4a7b2bfdb2d" }

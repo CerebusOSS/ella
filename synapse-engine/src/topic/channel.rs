@@ -7,6 +7,7 @@ use std::{
     task::Poll,
 };
 
+use arrow_schema::SchemaRef;
 use datafusion::{
     arrow::record_batch::RecordBatch,
     datasource::TableProvider,
@@ -15,20 +16,19 @@ use datafusion::{
     logical_expr::TableType,
     physical_expr::PhysicalSortExpr,
     physical_plan::{
-        insert::DataSink, project_schema, stream::RecordBatchStreamAdapter, ExecutionPlan,
-        Partitioning, SendableRecordBatchStream, Statistics,
+        insert::DataSink, project_schema, ExecutionPlan, Partitioning, RecordBatchStream,
+        SendableRecordBatchStream, Statistics,
     },
     prelude::Expr,
 };
-use futures::{FutureExt, Stream, StreamExt, TryStreamExt};
-use synapse_common::row::RowFormat;
-// use synapse_row::RowFormat;
+use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt, TryStreamExt};
+use synapse_common::row::{RowFormat, RowSink};
 use tokio::sync::{broadcast, Notify};
 use tokio_util::sync::ReusableBoxFuture;
 
 use crate::{catalog::TopicId, ArrowSchema, Schema};
 
-use super::{config::ChannelConfig, RowSink, RwBuffer};
+use super::{config::ChannelConfig, rw::RwBufferSink, RwBuffer};
 
 pub struct TopicChannel {
     topic: TopicId,
@@ -61,10 +61,12 @@ impl TopicChannel {
         let publisher = Publisher {
             topic: topic.clone(),
             schema: schema.clone(),
-            rw,
-            subs,
-            stop,
-            active,
+            inner: PublisherInner {
+                rw: rw.sink(),
+                subs,
+                stop,
+                active,
+            },
         };
         Self {
             topic,
@@ -88,54 +90,37 @@ impl TopicChannel {
 
     fn subscribe_inner(&self, stop_on_inactive: bool) -> SubscriberInner {
         SubscriberInner {
-            inner: self.publisher.subs.subscribe(),
-            stop: self.publisher.stop.clone(),
-            active: self.publisher.active.clone(),
+            inner: self.publisher.inner.subs.subscribe(),
+            stop: self.publisher.inner.stop.clone(),
+            active: self.publisher.inner.active.clone(),
             stop_on_inactive,
         }
     }
 }
 
-pub struct Publisher {
-    topic: TopicId,
-    schema: Arc<Schema>,
-    rw: Arc<RwBuffer>,
+struct PublisherInner {
+    rw: RwBufferSink,
     subs: Arc<broadcast::Sender<RecordBatch>>,
     stop: Arc<Notify>,
     active: Arc<AtomicUsize>,
 }
 
-impl Debug for Publisher {
+impl Debug for PublisherInner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Publisher")
-            .field("topic", &self.topic)
-            .field("schema", &self.schema)
+        f.debug_struct("PublisherInner")
             .field("active", &self.active)
             .finish_non_exhaustive()
     }
 }
 
-impl Display for Publisher {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "publisher ({})", self.topic)
-    }
-}
-
-impl Clone for Publisher {
+impl Clone for PublisherInner {
     fn clone(&self) -> Self {
         self.active.fetch_add(1, Ordering::Release);
-        Self {
-            topic: self.topic.clone(),
-            schema: self.schema.clone(),
-            rw: self.rw.clone(),
-            subs: self.subs.clone(),
-            stop: self.stop.clone(),
-            active: self.active.clone(),
-        }
+        self.clone_inner()
     }
 }
 
-impl Drop for Publisher {
+impl Drop for PublisherInner {
     fn drop(&mut self) {
         let active = self.active.fetch_sub(1, Ordering::Release) - 1;
         if active == 0 {
@@ -144,35 +129,84 @@ impl Drop for Publisher {
     }
 }
 
+impl PublisherInner {
+    fn clone_inner(&self) -> Self {
+        Self {
+            rw: self.rw.clone(),
+            subs: self.subs.clone(),
+            stop: self.stop.clone(),
+            active: self.active.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Publisher {
+    topic: TopicId,
+    schema: Arc<Schema>,
+    inner: PublisherInner,
+}
+
+impl Display for Publisher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "publisher ({})", self.topic)
+    }
+}
+
+impl Sink<RecordBatch> for Publisher {
+    type Error = crate::Error;
+
+    #[inline]
+    fn poll_ready(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<std::result::Result<(), Self::Error>> {
+        self.inner.rw.poll_ready_unpin(cx)
+    }
+
+    #[inline]
+    fn start_send(
+        mut self: std::pin::Pin<&mut Self>,
+        item: RecordBatch,
+    ) -> std::result::Result<(), Self::Error> {
+        let batch = item.with_schema(self.schema.arrow_schema().clone())?;
+        let _ = self.inner.subs.send(batch.clone());
+        self.inner.rw.start_send_unpin(batch)
+    }
+
+    #[inline]
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<std::result::Result<(), Self::Error>> {
+        self.inner.rw.poll_flush_unpin(cx)
+    }
+
+    #[inline]
+    fn poll_close(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<std::result::Result<(), Self::Error>> {
+        self.inner.rw.poll_close_unpin(cx)
+    }
+}
+
 impl Publisher {
-    pub fn rows<R: RowFormat>(self, buffer: usize) -> crate::Result<RowSink<R>> {
-        RowSink::try_new(self, buffer)
+    pub fn rows<R: RowFormat>(self, buffer: usize) -> crate::Result<RowSink<R, Self>> {
+        let schema = self.schema.arrow_schema().clone();
+        RowSink::try_new(self, schema, buffer)
     }
 
     pub fn schema(&self) -> &Arc<Schema> {
         &self.schema
     }
 
-    pub fn try_write<R>(&self, batch: R) -> crate::Result<()>
-    where
-        R: Into<RecordBatch>,
-    {
-        let batch: RecordBatch = batch.into();
-        let batch = batch.with_schema(self.schema.arrow_schema().clone())?;
-        self.rw.try_insert(batch.clone())?;
-        let _ = self.subs.send(batch);
-        Ok(())
-    }
-
-    pub async fn write<R>(&self, batch: R) -> crate::Result<()>
-    where
-        R: Into<RecordBatch>,
-    {
-        let batch: RecordBatch = batch.into();
-        let batch = batch.with_schema(self.schema.arrow_schema().clone())?;
-        self.rw.insert(batch.clone()).await?;
-        let _ = self.subs.send(batch);
-        Ok(())
+    fn clone_inner(&self) -> Self {
+        Self {
+            topic: self.topic.clone(),
+            schema: self.schema.clone(),
+            inner: self.inner.clone_inner(),
+        }
     }
 }
 
@@ -183,14 +217,18 @@ impl DataSink for Publisher {
         mut data: SendableRecordBatchStream,
         _ctx: &Arc<TaskContext>,
     ) -> Result<u64> {
+        let mut this = self.clone_inner();
         let mut rows = 0;
 
         while let Some(batch) = data.try_next().await? {
             rows += batch.num_rows();
-            self.write(batch)
+            this.feed(batch)
                 .await
                 .map_err(|err| DataFusionError::External(Box::new(err)))?;
         }
+        this.flush()
+            .await
+            .map_err(|err| DataFusionError::External(Box::new(err)))?;
         Ok(rows as u64)
     }
 }
@@ -299,7 +337,7 @@ impl TableProvider for TopicChannel {
         projection: Option<&Vec<usize>>,
         // filters and limit can be used here to inject some push-down operations if needed
         _filters: &[Expr],
-        _limit: Option<usize>,
+        limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         // let filters = create_physical_expr(
         //     conjunction(filters),
@@ -307,29 +345,32 @@ impl TableProvider for TopicChannel {
         //     &self.schema,
         //     state.execution_props(),
         // )?;
-        Ok(Arc::new(TableExec::try_new(
+        Ok(Arc::new(ChannelExec::try_new(
             self.subscribe_inner(true),
             self.schema.clone(),
             projection.cloned(),
+            limit,
         )?))
     }
 }
 
 #[allow(dead_code)]
 #[derive(Debug)]
-struct TableExec {
+struct ChannelExec {
     src: SubscriberInner,
     schema: Arc<Schema>,
     projected_schema: Arc<ArrowSchema>,
     projection: Option<Vec<usize>>,
     order: Option<Vec<PhysicalSortExpr>>,
+    limit: Option<usize>,
 }
 
-impl TableExec {
+impl ChannelExec {
     fn try_new(
         src: SubscriberInner,
         schema: Arc<Schema>,
         projection: Option<Vec<usize>>,
+        limit: Option<usize>,
     ) -> Result<Self> {
         let projected_schema = project_schema(schema.arrow_schema(), projection.as_ref())?;
         let order = schema.output_ordering();
@@ -339,11 +380,12 @@ impl TableExec {
             projected_schema,
             projection,
             order,
+            limit,
         })
     }
 }
 
-impl ExecutionPlan for TableExec {
+impl ExecutionPlan for ChannelExec {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -380,23 +422,69 @@ impl ExecutionPlan for TableExec {
         _partition: usize,
         _context: Arc<datafusion::execution::context::TaskContext>,
     ) -> Result<datafusion::physical_plan::SendableRecordBatchStream> {
-        let stream = Subscriber::new(self.src.clone());
-        if let Some(projection) = self.projection.clone() {
-            Ok(Box::pin(RecordBatchStreamAdapter::new(
-                self.projected_schema.clone(),
-                stream.map(move |item| {
-                    item.and_then(|b| b.project(projection.as_ref()).map_err(Into::into))
-                }),
-            )))
-        } else {
-            Ok(Box::pin(RecordBatchStreamAdapter::new(
-                self.projected_schema.clone(),
-                stream,
-            )))
-        }
+        let stream = ChannelStream {
+            inner: Subscriber::new(self.src.clone()),
+            limit: self.limit,
+            rows: 0,
+            schema: self.projected_schema.clone(),
+            projection: self.projection.clone(),
+        };
+        Ok(Box::pin(stream))
     }
 
     fn statistics(&self) -> Statistics {
         Statistics::default()
+    }
+
+    fn fmt_as(
+        &self,
+        _t: datafusion::physical_plan::DisplayFormatType,
+        f: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        let publishers = self.src.active.load(Ordering::Relaxed);
+        write!(f, "ChannelExec: publishers={}", publishers)?;
+        if let Some(limit) = self.limit {
+            write!(f, ", limit={}", limit)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct ChannelStream {
+    inner: Subscriber,
+    limit: Option<usize>,
+    rows: usize,
+    schema: SchemaRef,
+    projection: Option<Vec<usize>>,
+}
+
+impl Stream for ChannelStream {
+    type Item = Result<RecordBatch>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        if self.limit == Some(self.rows) {
+            return Poll::Ready(None);
+        }
+
+        Poll::Ready(match futures::ready!(self.inner.poll_next_unpin(cx)) {
+            Some(Ok(mut batch)) => {
+                self.rows += batch.num_rows();
+                if let Some(projection) = &self.projection {
+                    batch = batch.project(&projection)?;
+                }
+                Some(Ok(batch))
+            }
+            res => res,
+        })
+    }
+}
+
+impl RecordBatchStream for ChannelStream {
+    fn schema(&self) -> SchemaRef {
+        self.schema.clone()
     }
 }

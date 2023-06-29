@@ -77,3 +77,11 @@ impl SubAssign<Duration> for Time {
         self.0 -= rhs;
     }
 }
+
+impl Sub for Time {
+    type Output = Duration;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.0 - rhs.0
+    }
+}

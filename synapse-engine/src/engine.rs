@@ -93,7 +93,9 @@ impl Engine {
         let root: crate::Path = root.as_ref().parse()?;
         let df_cfg = SessionConfig::new()
             .with_create_default_catalog_and_schema(false)
-            .with_default_catalog_and_schema(Catalog::CATALOG_ID, Catalog::SCHEMA_ID);
+            .with_default_catalog_and_schema(Catalog::CATALOG_ID, Catalog::SCHEMA_ID)
+            // TODO: support batches
+            .with_coalesce_batches(false);
 
         let session = SessionContext::with_config(df_cfg);
         let env = session.runtime_env();

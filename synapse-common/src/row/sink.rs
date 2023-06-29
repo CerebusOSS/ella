@@ -1,16 +1,14 @@
 use std::task::{Context, Poll};
 
-use arrow_schema::SchemaRef;
-use datafusion::arrow::record_batch::RecordBatch;
+use super::{RowBatchBuilder, RowFormat};
+use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
 use futures::Sink;
-use synapse_common::row::{RowBatchBuilder, RowFormat};
 
 pin_project_lite::pin_project! {
     #[derive(Debug, Clone)]
     #[project = RowSinkProj]
     pub struct RowSink<R: RowFormat, S> {
         #[pin]
-        // inner: Publisher,
         inner: S,
         builder: R::Builder,
         capacity: usize,
@@ -23,7 +21,7 @@ where
     R: RowFormat,
     S: Sink<RecordBatch, Error = crate::Error>,
 {
-    pub(crate) fn try_new(inner: S, schema: SchemaRef, capacity: usize) -> crate::Result<Self> {
+    pub fn try_new(inner: S, schema: SchemaRef, capacity: usize) -> crate::Result<Self> {
         let builder = R::builder(&schema.fields)?;
 
         Ok(Self {
@@ -68,6 +66,7 @@ where
 {
     type Error = crate::Error;
 
+    #[inline]
     fn poll_ready(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -75,6 +74,7 @@ where
         Self::maybe_flush(&mut self.project(), false, cx)
     }
 
+    #[inline]
     fn start_send(self: std::pin::Pin<&mut Self>, item: R) -> Result<(), Self::Error> {
         self.project().builder.push(item);
         Ok(())

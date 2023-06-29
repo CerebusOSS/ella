@@ -1,4 +1,5 @@
 use engine::{EngineConfig, Schema};
+use futures::SinkExt;
 use opentelemetry::{
     sdk::{trace, Resource},
     KeyValue,
@@ -47,7 +48,6 @@ async fn main() -> anyhow::Result<()> {
         .finish()
         .field("dt")
         .data_type(TensorType::Duration)
-        .row_shape((2,))
         .finish()
         .field("x")
         .data_type(TensorType::Float32)
@@ -67,10 +67,10 @@ async fn main() -> anyhow::Result<()> {
     let mut i = 0_i32;
     while synapse_common::now() < end {
         i += 1;
-        sink.write((
+        sink.feed((
             synapse_common::now(),
             i,
-            tensor::tensor![Duration::milliseconds(50), Duration::milliseconds(2)],
+            Duration::milliseconds(50),
             Tensor::linspace(i as f32, (i + 1) as f32, 512),
             tensor::tensor!["A".to_string(), "B".to_string()],
         ))
@@ -79,11 +79,11 @@ async fn main() -> anyhow::Result<()> {
     sink.close().await?;
     drop(sink);
 
-    // let df = sy.query("select DISTINCT i from point").await?;
-    // let mut sub = df.execute_stream().await?;
-    // while let Some(batch) = sub.try_next().await? {
-    //     // println!("{:?}", batch);
-    // }
+    let df = sy.query("select * from point order by time").await?;
+    let mut sub = df.execute_stream().await?;
+    while let Some(batch) = sub.try_next().await? {
+        // println!("{:?}", batch);
+    }
 
     sy.shutdown().await?;
     opentelemetry::global::shutdown_tracer_provider();

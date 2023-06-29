@@ -50,7 +50,7 @@ impl TensorType {
             Float32 => DataType::Float32,
             Float64 => DataType::Float64,
             Duration => DataType::Duration(TimeUnit::Nanosecond),
-            Timestamp => DataType::Timestamp(TimeUnit::Nanosecond, Some(Arc::from("UTC"))),
+            Timestamp => DataType::Timestamp(TimeUnit::Nanosecond, Some(Arc::from("+00:00"))),
             String => DataType::Utf8,
         }
     }

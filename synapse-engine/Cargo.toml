@@ -24,19 +24,16 @@ async-trait = { workspace = true }
 dashmap = { workspace = true }
 strum = { workspace = true }
 url = { workspace = true }
+flume = { workspace = true }
 
 prometheus-client = { workspace = true, optional = true }
 hyper = { workspace = true, optional = true }
 
-
 num-traits = "0.2.15"
 tokio-stream = { version = "0.1.12", features = ["sync"] }
 tokio-util = "0.7.7"
-
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
-
-flume = "0.10.14"
 
 [dev-dependencies]
 anyhow = "1.0.70"

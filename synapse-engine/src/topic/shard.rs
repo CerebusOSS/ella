@@ -20,7 +20,7 @@ use datafusion::{
     },
     error::{DataFusionError, Result as DfResult},
     execution::context::SessionState,
-    logical_expr::TableType,
+    logical_expr::{TableProviderFilterPushDown, TableType},
     optimizer::utils::conjunction,
     physical_expr::create_physical_expr,
     physical_plan::{project_schema, ExecutionPlan, Statistics},
@@ -286,6 +286,13 @@ impl TableProvider for ShardManager {
 
     fn table_type(&self) -> TableType {
         TableType::Base
+    }
+
+    fn supports_filters_pushdown(
+        &self,
+        filters: &[&Expr],
+    ) -> DfResult<Vec<TableProviderFilterPushDown>> {
+        Ok(vec![TableProviderFilterPushDown::Inexact; filters.len()])
     }
 
     async fn scan(

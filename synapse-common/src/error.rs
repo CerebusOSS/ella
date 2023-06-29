@@ -4,7 +4,73 @@ use datafusion::arrow::datatypes::{DataType, Field};
 
 use crate::TensorType;
 
+pub type Result<T> = std::result::Result<T, Error>;
+
 type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Engine(#[from] EngineError),
+    #[error(transparent)]
+    Shape(#[from] ShapeError),
+    #[cfg(feature = "pyo3")]
+    #[error(transparent)]
+    PySynapse(#[from] PySynapseError),
+    #[cfg(feature = "flight")]
+    #[error(transparent)]
+    Server(#[from] ServerError),
+    #[cfg(feature = "flight")]
+    #[error(transparent)]
+    Client(#[from] ClientError),
+    #[error("unsupported arrow datatype {0}")]
+    DataType(DataType),
+    #[error("axis {0:?} out of bounds for shape with {1} dimensions")]
+    AxisOutOfBounds(isize, usize),
+    #[error("empty list passed to operation that requires at least one tensor")]
+    EmptyList,
+    #[error("no column found for column name {0}")]
+    ColumnLookup(String),
+    #[error("failed to cast tensor of type {from:?} to type {to:?}")]
+    Cast { to: TensorType, from: TensorType },
+    #[error("unknown extension type {0}")]
+    UnknownExtension(String),
+    #[error("missing metadata for extension type {0}")]
+    MissingMetadata(String),
+    #[error("serialization error")]
+    Serialization(BoxError),
+    #[error("row builder expected {0} columns but found {1} fields in schema")]
+    FieldCount(usize, usize),
+    #[error("row builder incompatible with field {0:?}")]
+    IncompatibleRow(Arc<Field>),
+    #[error("datafusion error")]
+    DataFusion(#[from] datafusion::error::DataFusionError),
+    #[error("I/O error")]
+    Io(#[from] std::io::Error),
+    #[error("arrow error")]
+    Arrow(#[from] datafusion::arrow::error::ArrowError),
+    #[error("parquet error")]
+    Parquet(#[from] datafusion::parquet::errors::ParquetError),
+    #[error("object store error")]
+    ObjectStore(#[from] object_store::Error),
+    #[error("invalid url")]
+    Url(#[from] url::ParseError),
+    #[cfg(feature = "flight")]
+    #[error("arrow flight error")]
+    Flight(#[from] arrow_flight::error::FlightError),
+}
+
+impl Error {
+    pub fn cast(to: TensorType, from: TensorType) -> Self {
+        Self::Cast { to, from }
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(value: serde_json::Error) -> Self {
+        Self::Serialization(Box::new(value))
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ShapeError {
@@ -46,15 +112,6 @@ pub enum EngineError {
     Worker { id: String, error: String },
 }
 
-#[cfg(feature = "pyo3")]
-#[derive(Debug, thiserror::Error)]
-pub enum PySynapseError {
-    #[error("no topic with id '{0}' (to create the topic pass a schema)")]
-    TopicNotFound(String),
-    #[error("expected one of 'ascending' or 'descending' for index, got '{0}'")]
-    InvalidIndexMode(String),
-}
-
 impl EngineError {
     pub fn worker_panic(id: &str, error: &Box<dyn Any + Send + 'static>) -> Self {
         let error = if let Some(e) = error.downcast_ref::<String>() {
@@ -71,59 +128,56 @@ impl EngineError {
     }
 }
 
+#[cfg(feature = "pyo3")]
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("engine error: {0:?}")]
-    Engine(#[from] EngineError),
-    #[error("unsupported arrow datatype {0}")]
-    DataType(DataType),
-    #[error("shape error: {0:?}")]
-    Shape(#[from] ShapeError),
-    #[error("axis {0:?} out of bounds for shape with {1} dimensions")]
-    AxisOutOfBounds(isize, usize),
-    #[error("empty list passed to operation that requires at least one tensor")]
-    EmptyList,
-    #[error("no column found for column name {0}")]
-    ColumnLookup(String),
-    #[error("failed to cast tensor of type {from:?} to type {to:?}")]
-    Cast { to: TensorType, from: TensorType },
-    #[error("unknown extension type {0}")]
-    UnknownExtension(String),
-    #[error("missing metadata for extension type {0}")]
-    MissingMetadata(String),
-    #[error("serialization error")]
-    Serialization(BoxError),
-    #[error("row builder expected {0} columns but found {1} fields in schema")]
-    FieldCount(usize, usize),
-    #[error("row builder incompatible with field {0:?}")]
-    IncompatibleRow(Arc<Field>),
-    #[error("datafusion error")]
-    DataFusion(#[from] datafusion::error::DataFusionError),
-    #[error("I/O error")]
-    Io(#[from] std::io::Error),
-    #[error("arrow error")]
-    Arrow(#[from] datafusion::arrow::error::ArrowError),
-    #[error("parquet error")]
-    Parquet(#[from] datafusion::parquet::errors::ParquetError),
-    #[error("object store error")]
-    ObjectStore(#[from] object_store::Error),
-    #[error("invalid url")]
-    Url(#[from] url::ParseError),
-    #[cfg(feature = "pyo3")]
-    #[error(transparent)]
-    PySynapse(#[from] PySynapseError),
+pub enum PySynapseError {
+    #[error("no topic with id '{0}' (to create the topic pass a schema)")]
+    TopicNotFound(String),
+    #[error("expected one of 'ascending' or 'descending' for index, got '{0}'")]
+    InvalidIndexMode(String),
 }
 
-impl Error {
-    pub fn cast(to: TensorType, from: TensorType) -> Self {
-        Self::Cast { to, from }
+#[cfg(feature = "flight")]
+#[derive(Debug, thiserror::Error)]
+pub enum ServerError {
+    #[error("invalid arrow flight ticket {0:?}")]
+    InvalidTicket(prost::bytes::Bytes),
+    #[error("SQL query must be a PREPARE statement, got {0}")]
+    InvalidPrepareQuery(String),
+    #[error("transport error")]
+    Transport(#[source] BoxError),
+}
+
+#[cfg(feature = "flight")]
+impl ServerError {
+    pub fn transport<E>(error: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self::Transport(Box::new(error))
     }
 }
 
-impl From<serde_json::Error> for Error {
-    fn from(value: serde_json::Error) -> Self {
-        Self::Serialization(Box::new(value))
+#[cfg(feature = "flight")]
+impl From<Error> for tonic::Status {
+    fn from(e: Error) -> Self {
+        use tonic::Status;
+        use ServerError::*;
+
+        match &e {
+            Error::Server(InvalidTicket(_)) | Error::Server(InvalidPrepareQuery(_)) => {
+                Status::invalid_argument(format!("{}", e))
+            }
+            _ => Status::internal(format!("{:?}", e)),
+        }
     }
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+#[cfg(feature = "flight")]
+#[derive(Debug, thiserror::Error)]
+pub enum ClientError {
+    #[error("server error: {0}")]
+    Server(#[from] tonic::Status),
+    #[error("topic sink closed unexpectedly")]
+    TopicClosed,
+}

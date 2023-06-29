@@ -1,11 +1,13 @@
 pub mod array;
 mod format;
 pub mod scalar;
+mod sink;
 pub mod tuple;
 
 use std::sync::Arc;
 
 pub use format::{RowBatchBuilder, RowFormat};
+pub use sink::RowSink;
 
 use crate::Time;
 use datafusion::arrow::{array::ArrayRef, datatypes::Field};

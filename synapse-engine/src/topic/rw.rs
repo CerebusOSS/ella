@@ -11,7 +11,8 @@ use datafusion::{
     prelude::Expr,
 };
 
-use flume::TrySendError;
+use flume::r#async::SendSink;
+use futures::{Sink, SinkExt};
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 use tracing::Instrument;
@@ -27,7 +28,7 @@ pub struct RwBuffer {
     topic: TopicId,
     config: RwBufferConfig,
     schema: Arc<Schema>,
-    input: InstrumentedBuffer<flume::Sender<RecordBatch>>,
+    input: InstrumentedBuffer<SendSink<'static, RecordBatch>>,
     compacting: Arc<WorkQueueIn<RecordBatch>>,
     writing: Arc<WorkQueueIn<()>>,
     handle: Mutex<Option<JoinHandle<()>>>,
@@ -48,7 +49,7 @@ impl RwBuffer {
     pub fn new(topic: TopicId, shards: Arc<ShardManager>, config: RwBufferConfig) -> Self {
         let schema = shards.schema();
         let (send, recv) = flume::bounded(config.queue_size);
-        let input = send.monitor_load(&topic, "rw.input");
+        let input = send.into_sink().monitor_load(&topic, "rw.input");
         let (compacting, compacting_out) = work_queue(config.queue_size);
         let (writing, writing_out) = work_queue(config.queue_size);
         let compacting = Arc::new(compacting);
@@ -92,19 +93,8 @@ impl RwBuffer {
         &self.config
     }
 
-    pub async fn insert(&self, batch: RecordBatch) -> crate::Result<()> {
-        match self.input.send_async(batch).await {
-            Ok(_) => Ok(()),
-            Err(_) => Err(crate::EngineError::TableClosed.into()),
-        }
-    }
-
-    pub fn try_insert(&self, batch: RecordBatch) -> crate::Result<()> {
-        match self.input.try_send(batch) {
-            Ok(_) => Ok(()),
-            Err(TrySendError::Disconnected(_)) => Err(crate::EngineError::TableClosed.into()),
-            Err(TrySendError::Full(_)) => Err(crate::EngineError::TableQueueFull.into()),
-        }
+    pub fn sink(self: Arc<Self>) -> RwBufferSink {
+        RwBufferSink(self.input.clone())
     }
 
     pub async fn close(&self) {
@@ -236,6 +226,49 @@ impl RwBuffer {
     }
 }
 
+#[derive(Clone)]
+pub struct RwBufferSink(InstrumentedBuffer<SendSink<'static, RecordBatch>>);
+
+impl Sink<RecordBatch> for RwBufferSink {
+    type Error = crate::Error;
+
+    fn poll_ready(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.0
+            .poll_ready_unpin(cx)
+            .map_err(|_| crate::EngineError::TableClosed.into())
+    }
+
+    fn start_send(
+        mut self: std::pin::Pin<&mut Self>,
+        item: RecordBatch,
+    ) -> Result<(), Self::Error> {
+        self.0
+            .start_send_unpin(item)
+            .map_err(|_| crate::EngineError::TableClosed.into())
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.0
+            .poll_flush_unpin(cx)
+            .map_err(|_| crate::EngineError::TableClosed.into())
+    }
+
+    fn poll_close(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.0
+            .poll_close_unpin(cx)
+            .map_err(|_| crate::EngineError::TableClosed.into())
+    }
+}
+
 #[async_trait::async_trait]
 impl TableProvider for RwBuffer {
     fn as_any(&self) -> &dyn std::any::Any {
@@ -261,7 +294,7 @@ impl TableProvider for RwBuffer {
         let compacting = self.compacting.values();
         let writing = self.writing.values();
         let mut table = MemoryExec::try_new(
-            &[compacting, writing],
+            &[writing, compacting],
             self.schema().arrow_schema().clone(),
             projection.cloned(),
         )?;

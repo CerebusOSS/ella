@@ -25,6 +25,15 @@ pub struct Schema {
 }
 
 impl Schema {
+    pub fn new(arrow_schema: Arc<ArrowSchema>, index_columns: Vec<IndexColumn>) -> Self {
+        let parquet = parquet_compat_schema(arrow_schema.clone());
+        Self {
+            inner: arrow_schema,
+            index_columns,
+            parquet,
+        }
+    }
+
     #[must_use]
     pub fn builder() -> SchemaBuilder {
         SchemaBuilder::new()
@@ -53,7 +62,7 @@ impl Schema {
                     expr: Arc::new(Column::new(&col.name, col.column)),
                     options: SortOptions {
                         descending: !col.ascending,
-                        nulls_first: false,
+                        nulls_first: true,
                     },
                 })
                 .collect::<Vec<_>>();

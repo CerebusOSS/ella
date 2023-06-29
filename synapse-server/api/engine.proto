@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package synapse.engine;
+
+service EngineService {
+  rpc CreateTopic(Topic) returns (Empty);
+  rpc ListTopics(Empty) returns (stream Topic);
+  rpc GetTopic(TopicId) returns (Topic);
+}
+
+message Empty {}
+
+message IndexColumn {
+  string name = 1;
+  uint32 column = 2;
+  bool ascending = 3;
+}
+
+message Schema {
+  bytes arrow_schema = 1;
+  repeated IndexColumn index_columns = 2;
+}
+
+message Topic {
+  string name = 1;
+  Schema schema = 2;
+}
+
+message TopicId { string name = 1; }

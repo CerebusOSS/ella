@@ -16,8 +16,14 @@ datafusion = { workspace = true }
 serde_json = { workspace = true }
 object_store = { workspace = true }
 url = { workspace = true }
+futures = { workspace = true }
+pin-project-lite = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
+arrow-flight = { workspace = true, optional = true }
+tonic = { workspace = true, optional = true }
+prost = { workspace = true, optional = true }
 
 [features]
 pyo3 = ["dep:pyo3", "datafusion/pyarrow"]
+flight = ["arrow-flight", "tonic", "prost"]
