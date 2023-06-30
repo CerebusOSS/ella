@@ -1,6 +1,6 @@
-use super::{RowBatchBuilder, RowFormat};
+use super::{RowBatchBuilder, RowFormat, RowFormatView, RowViewIter};
 use datafusion::arrow::datatypes::Field;
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 #[derive(Debug, Clone)]
 pub struct TupleBuilder<T> {
@@ -8,22 +8,31 @@ pub struct TupleBuilder<T> {
     len: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct TupleView<T, V> {
+    values: V,
+    len: usize,
+    _type: PhantomData<T>,
+}
+
 macro_rules! impl_tuple_row {
-    ($([$($t:ident)*])+) => {
+    ($([$i:literal $($t:ident)*])+) => {
         paste::paste! {
         $(
         impl<$($t),*> RowFormat for ($($t,)*)
         where $($t: RowFormat),*
         {
+            const COLUMNS: usize = $(<$t as RowFormat>::COLUMNS + )* 0;
             type Builder = TupleBuilder<($($t::Builder,)*)>;
+            type View = TupleView<($($t,)*), ($($t::View,)*)>;
 
             #[allow(unused_assignments, unused_mut)]
             fn builder(mut fields: &[Arc<Field>]) -> crate::Result<Self::Builder> {
-                if fields.len() != <Self::Builder as RowBatchBuilder<Self>>::COLUMNS {
-                    return Err(crate::Error::FieldCount(<Self::Builder as RowBatchBuilder<Self>>::COLUMNS, fields.len()));
+                if fields.len() != Self::COLUMNS {
+                    return Err(crate::Error::ColumnCount(Self::COLUMNS, fields.len()));
                 }
                 $(
-                    let cols = <$t::Builder as RowBatchBuilder<$t>>::COLUMNS;
+                    let cols = <$t as RowFormat>::COLUMNS;
                     let [< $t:lower >] = $t::builder(&fields[..cols])?;
                     fields = &fields[cols..];
                 )*
@@ -33,13 +42,31 @@ macro_rules! impl_tuple_row {
                     len: 0,
                 })
             }
+
+            #[allow(unused_assignments, unused_mut, unused_variables)]
+            fn view(rows: usize, mut fields: &[Arc<Field>], mut arrays: &[datafusion::arrow::array::ArrayRef]) -> crate::Result<Self::View> {
+                if arrays.len() != Self::COLUMNS {
+                    return Err(crate::Error::ColumnCount(Self::COLUMNS, arrays.len()));
+                }
+                $(
+                    let cols = <$t as RowFormat>::COLUMNS;
+                    let [< $t:lower >] = $t::view(rows, &fields[..cols], &arrays[..cols])?;
+                    debug_assert_eq!([< $t:lower >].len(), rows);
+                    fields = &fields[cols..];
+                    arrays = &arrays[cols..];
+                )*
+
+                Ok(TupleView {
+                    values: ($([< $t:lower >],)*),
+                    _type: PhantomData,
+                    len: rows,
+                })
+            }
         }
 
         impl<$($t),*> RowBatchBuilder<($($t,)*)> for TupleBuilder<($($t::Builder,)*)>
         where $($t: RowFormat),*
         {
-            const COLUMNS: usize = $(<$t::Builder as RowBatchBuilder<$t>>::COLUMNS + )* 0;
-
             #[inline]
             fn len(&self) -> usize {
                 self.len
@@ -55,7 +82,7 @@ macro_rules! impl_tuple_row {
 
             #[allow(unused_mut)]
             fn build_columns(&mut self) -> crate::Result<Vec<datafusion::arrow::array::ArrayRef>> {
-                let mut cols = Vec::with_capacity(<Self as RowBatchBuilder<($($t,)*)>>::COLUMNS);
+                let mut cols = Vec::with_capacity(<($($t,)*) as RowFormat>::COLUMNS);
                 let ($(ref mut [< $t:lower >],)*) = &mut self.builders;
                 $(
                     cols.extend([< $t:lower >].build_columns()?);
@@ -64,17 +91,52 @@ macro_rules! impl_tuple_row {
                 Ok(cols)
             }
         }
+
+        impl<$($t),*> RowFormatView<($($t,)*)> for TupleView<($($t,)*), ($($t::View,)*)>
+        where $($t: RowFormat),*
+        {
+            fn len(&self) -> usize {
+                self.len
+            }
+
+            #[allow(unused_variables)]
+            fn row(&self, i: usize) -> ($($t,)*) {
+                let ($(ref [< $t:lower >],)*) = &self.values;
+                ($(
+                    [< $t:lower >].row(i),
+                )*)
+            }
+
+            #[allow(unused_variables)]
+            unsafe fn row_unchecked(&self, i: usize) -> ($($t,)*) {
+                let ($(ref [< $t:lower >],)*) = &self.values;
+                ($(
+                    [< $t:lower >].row_unchecked(i),
+                )*)
+            }
+        }
+
+        impl<$($t),*> IntoIterator for TupleView<($($t,)*), ($($t::View,)*)>
+        where $($t: RowFormat),*
+        {
+            type Item = ($($t,)*);
+            type IntoIter = RowViewIter<($($t,)*), Self>;
+
+            fn into_iter(self) -> Self::IntoIter {
+                RowViewIter::new(self)
+            }
+        }
         )+
         }
     };
 }
 
 impl_tuple_row!(
-    []
-    [T1]
-    [T1 T2]
-    [T1 T2 T3]
-    [T1 T2 T3 T4]
-    [T1 T2 T3 T4 T5]
-    [T1 T2 T3 T4 T5 T6]
+    [0]
+    [1 T1]
+    [2 T1 T2]
+    [3 T1 T2 T3]
+    [4 T1 T2 T3 T4]
+    [5 T1 T2 T3 T4 T5]
+    [6 T1 T2 T3 T4 T5 T6]
 );

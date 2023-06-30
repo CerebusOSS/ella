@@ -1,4 +1,4 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, panic::resume_unwind, sync::Arc, task::Poll};
 
 use arrow_flight::{
     encode::FlightDataEncoderBuilder,
@@ -7,7 +7,10 @@ use arrow_flight::{
 };
 use datafusion::arrow::record_batch::RecordBatch;
 use flume::r#async::SendSink;
-use futures::{Sink, SinkExt, StreamExt};
+use futures::{
+    stream::{AbortHandle, Abortable},
+    FutureExt, Sink, SinkExt, StreamExt,
+};
 use prost::Message;
 use synapse_common::row::{RowFormat, RowSink};
 use synapse_engine::Schema;
@@ -19,6 +22,7 @@ pub struct FlightPublisher {
     send: SendSink<'static, RecordBatch>,
     handle: JoinHandle<crate::Result<()>>,
     schema: Arc<Schema>,
+    stop: AbortHandle,
 }
 
 impl Debug for FlightPublisher {
@@ -43,10 +47,12 @@ impl FlightPublisher {
             .as_any()
             .encode_to_vec(),
         );
+        let (stop, reg) = AbortHandle::new_pair();
         let header = futures::stream::once(async { FlightData::new().with_descriptor(descriptor) });
         let stream = FlightDataEncoderBuilder::new()
             .build(recv.into_stream().map(Ok))
             .map(|res| res.unwrap());
+        let stream = Abortable::new(stream, reg);
 
         let handle = tokio::spawn(async move {
             let mut resp = client.flight.do_put(header.chain(stream)).await?;
@@ -57,6 +63,7 @@ impl FlightPublisher {
             send,
             handle,
             schema,
+            stop,
         })
     }
 
@@ -99,13 +106,20 @@ impl Sink<RecordBatch> for FlightPublisher {
             .map_err(|_| crate::ClientError::TopicClosed.into())
     }
 
-    #[inline]
     fn poll_close(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
-        self.send
-            .poll_close_unpin(cx)
-            .map_err(|_| crate::ClientError::TopicClosed.into())
+        if futures::ready!(self.send.poll_close_unpin(cx)).is_err() {
+            return Poll::Ready(Err(crate::ClientError::TopicClosed.into()));
+        }
+        if !self.stop.is_aborted() {
+            self.stop.abort();
+        }
+        Poll::Ready(match futures::ready!(self.handle.poll_unpin(cx)) {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(err)) => Err(err),
+            Err(err) => resume_unwind(err.into_panic()),
+        })
     }
 }

@@ -20,8 +20,12 @@ use arrow_flight::{
     FlightInfo, HandshakeRequest, HandshakeResponse, IpcMessage, SchemaAsIpc, Ticket,
 };
 use datafusion::arrow::ipc::writer::IpcWriteOptions;
+use datafusion::physical_plan::execute_stream;
 use datafusion::sql::parser::{CopyToSource, CopyToStatement, Statement};
 use datafusion::sql::sqlparser::ast::{Ident, ObjectName};
+use datafusion_proto::bytes::{
+    logical_plan_from_bytes_with_extension_codec, logical_plan_to_bytes_with_extension_codec,
+};
 use futures::{SinkExt, Stream, TryStreamExt};
 use once_cell::sync::Lazy;
 use prost::bytes::Bytes;
@@ -33,7 +37,7 @@ use tonic::{Request, Response, Status, Streaming};
 use synapse_engine::Engine;
 
 use crate::prepare::{PreparedStatement, PreparedStatements};
-use crate::ticket::{SynapseTicket, TicketTracker};
+use crate::remote::SynapseExtensionCodec;
 
 macro_rules! status {
     ($desc:expr, $err:expr) => {
@@ -52,74 +56,46 @@ static SQL_INFO: Lazy<SqlInfoList> = Lazy::new(|| {
 #[derive(Debug, Clone)]
 pub struct SynapseSqlService {
     engine: Engine,
-    tickets: TicketTracker,
     statements: PreparedStatements,
+    codec: SynapseExtensionCodec,
 }
 
 impl SynapseSqlService {
     pub fn new(engine: Engine) -> Self {
         let ctx = engine.ctx().session().clone();
-        let tickets = TicketTracker::new(ctx.clone());
         let statements = PreparedStatements::new(ctx);
+        let codec = SynapseExtensionCodec::new(&engine);
         Self {
             engine,
-            tickets,
             statements,
+            codec,
         }
     }
 }
 
 impl SynapseSqlService {
-    async fn take_ticket(
+    async fn execute_plan(
         &self,
-        ticket: &SynapseTicket,
+        ticket: &[u8],
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        match self.tickets.take(ticket) {
-            Some(task) => {
-                let stream = task
-                    .stream()
-                    .await?
-                    .map_err(|err| FlightError::ExternalError(Box::new(err)));
+        let ctx = self.engine.ctx().session();
+        let plan = logical_plan_from_bytes_with_extension_codec(&ticket, ctx, &self.codec)
+            .map_err(crate::Error::from)?;
+        let state = ctx.state();
+        let plan = state
+            .create_physical_plan(&plan)
+            .await
+            .map_err(crate::Error::from)?;
+        let schema = plan.schema();
 
-                let stream = FlightDataEncoderBuilder::new()
-                    .with_schema(task.schema())
-                    .build(stream)
-                    .map_err(Into::into);
-
-                Ok(Response::new(Box::pin(stream)))
-            }
-            None => Err(Status::not_found(format!(
-                "ticket {:?} does not exist or has already been used",
-                ticket
-            ))),
-        }
-    }
-
-    async fn sql_query(&self, query: &str) -> crate::Result<FlightInfo> {
-        let (ticket, task) = self.tickets.put_sql(query).await?;
-        let ticket = TicketStatementQuery {
-            statement_handle: ticket.into(),
-        };
-        let endpoint = FlightEndpoint {
-            ticket: Some(Ticket {
-                ticket: ticket.as_any().encode_to_vec().into(),
-            }),
-            location: vec![],
-        };
-
-        let mut info = FlightInfo::new()
-            .try_with_schema(&task.schema())?
-            .with_endpoint(endpoint)
-            .with_ordered(task.is_ordered());
-
-        if let Some(rows) = task.num_rows() {
-            info = info.with_total_records(rows as i64);
-        }
-        if let Some(bytes) = task.byte_size() {
-            info = info.with_total_bytes(bytes as i64);
-        }
-
-        Ok(info)
+        let stream = execute_stream(plan, state.task_ctx())
+            .map_err(crate::Error::from)?
+            .map_err(|err| FlightError::ExternalError(Box::new(err)));
+        let stream = FlightDataEncoderBuilder::new()
+            .with_schema(schema)
+            .build(stream)
+            .map_err(Into::into);
+        Ok(Response::new(Box::pin(stream)))
     }
 }
 
@@ -143,14 +119,14 @@ impl FlightSqlService for SynapseSqlService {
         return Ok(Response::new(Box::pin(output)));
     }
 
-    #[tracing::instrument(skip(self, _message))]
+    #[tracing::instrument(skip_all)]
     async fn do_get_fallback(
         &self,
         request: Request<Ticket>,
         _message: Any,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        let ticket = request.get_ref().clone().try_into()?;
-        self.take_ticket(&ticket).await
+        let ticket = request.into_inner().ticket;
+        self.execute_plan(&ticket).await
     }
 
     #[tracing::instrument(skip(self, request))]
@@ -159,9 +135,29 @@ impl FlightSqlService for SynapseSqlService {
         query: CommandStatementQuery,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        let info = self
-            .sql_query(&query.query)
-            .await?
+        let state = self.engine.ctx().session().state();
+        let mut plan = state
+            .create_logical_plan(&query.query)
+            .await
+            .map_err(crate::Error::from)?;
+        plan = state.optimize(&plan).map_err(crate::Error::from)?;
+
+        let statement_handle = logical_plan_to_bytes_with_extension_codec(&plan, &self.codec)
+            .map_err(crate::Error::from)?;
+
+        let ticket = TicketStatementQuery { statement_handle };
+        let endpoint = FlightEndpoint {
+            ticket: Some(Ticket {
+                ticket: ticket.as_any().encode_to_vec().into(),
+            }),
+            location: vec![],
+        };
+
+        let info = FlightInfo::new()
+            .try_with_schema(&(&**plan.schema()).into())
+            .map_err(crate::Error::from)?
+            .with_endpoint(endpoint)
+            .with_ordered(true)
             .with_descriptor(request.into_inner());
         Ok(Response::new(info))
     }
@@ -336,14 +332,13 @@ impl FlightSqlService for SynapseSqlService {
         ))
     }
 
-    #[tracing::instrument(skip(self, _request))]
+    #[tracing::instrument(skip_all)]
     async fn do_get_statement(
         &self,
         ticket: TicketStatementQuery,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        let ticket = SynapseTicket::from_bytes(ticket.statement_handle)?;
-        self.take_ticket(&ticket).await
+        self.execute_plan(&ticket.statement_handle).await
     }
 
     #[tracing::instrument(skip(self, _request))]

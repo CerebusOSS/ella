@@ -1,8 +1,9 @@
 use futures::{SinkExt, TryStreamExt};
-use synapse_common::Duration;
+use synapse_common::{Duration, Time};
 use synapse_server::client::SynapseClient;
 use synapse_tensor as tensor;
 use synapse_tensor::Tensor;
+use tensor::Tensor1;
 use tonic::transport::Channel;
 use tracing_subscriber::prelude::*;
 
@@ -24,6 +25,8 @@ async fn main() -> synapse_engine::Result<()> {
 
     let mut stream = client
         .query("select time, x, y from point where time > now() order by time nulls first")
+        .await?
+        .rows::<(Time, Tensor1<f32>, Tensor1<String>)>()
         .await?;
     for i in 0..10 {
         let now = synapse_common::now();

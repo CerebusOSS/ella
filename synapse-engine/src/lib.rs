@@ -1,6 +1,7 @@
 pub mod catalog;
 mod context;
 mod engine;
+pub mod lazy;
 pub(crate) mod metrics;
 mod path;
 pub mod schema;

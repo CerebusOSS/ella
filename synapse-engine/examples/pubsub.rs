@@ -4,10 +4,10 @@ use opentelemetry::{
     sdk::{trace, Resource},
     KeyValue,
 };
-use synapse_common::Duration;
+use synapse_common::{Duration, Time};
 use synapse_engine as engine;
 use synapse_tensor as tensor;
-use tensor::{Tensor, TensorType};
+use tensor::{Tensor, Tensor1, TensorType};
 use tokio_stream::StreamExt;
 use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer,
@@ -79,10 +79,13 @@ async fn main() -> anyhow::Result<()> {
     sink.close().await?;
     drop(sink);
 
-    let df = sy.query("select * from point order by time").await?;
-    let mut sub = df.execute_stream().await?;
-    while let Some(batch) = sub.try_next().await? {
-        // println!("{:?}", batch);
+    let mut rows = sy
+        .query("SELECT * FROM point ORDER BY time")
+        .await?
+        .rows::<(Time, i32, Duration, Tensor1<f32>, Tensor1<String>)>()
+        .await?;
+    while let Some(row) = rows.try_next().await? {
+        println!("{:?}", row);
     }
 
     sy.shutdown().await?;

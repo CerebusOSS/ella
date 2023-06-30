@@ -1,31 +1,63 @@
 mod publisher;
 
-use std::{collections::VecDeque, task::Poll};
+use std::{collections::VecDeque, fmt::Debug, sync::Arc, task::Poll};
 
 use arrow_flight::{
-    decode::FlightRecordBatchStream, error::FlightError, sql::client::FlightSqlServiceClient,
-    FlightInfo,
+    decode::FlightRecordBatchStream,
+    error::FlightError,
+    sql::{client::FlightSqlServiceClient, Any, Command, ProstMessageExt, TicketStatementQuery},
+    Ticket,
 };
-use datafusion::arrow::record_batch::RecordBatch;
-use futures::{Stream, StreamExt, TryStreamExt};
-use synapse_engine::Schema;
+use datafusion::{
+    arrow::record_batch::RecordBatch, logical_expr::LogicalPlan, prelude::SessionContext,
+};
+use datafusion_proto::bytes::{
+    logical_plan_from_bytes_with_extension_codec, logical_plan_to_bytes_with_extension_codec,
+};
+use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
+use prost::Message;
+use synapse_engine::{
+    lazy::{Lazy, LazyBackend},
+    Schema,
+};
 use tonic::transport::Channel;
 
-use crate::gen::{self, engine_service_client::EngineServiceClient};
+use crate::{
+    gen::{self, engine_service_client::EngineServiceClient},
+    remote::RemoteExtensionCodec,
+};
 
 use self::publisher::FlightPublisher;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SynapseClient {
     flight: FlightSqlServiceClient<Channel>,
     engine: EngineServiceClient<Channel>,
+    ctx: Arc<SessionContext>,
+    codec: RemoteExtensionCodec,
+}
+
+impl Debug for SynapseClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SynapseClient")
+            .field("flight", &self.flight)
+            .field("engine", &self.engine)
+            .finish_non_exhaustive()
+    }
 }
 
 impl SynapseClient {
     pub fn new(channel: Channel) -> Self {
         let flight = FlightSqlServiceClient::new(channel.clone());
         let engine = EngineServiceClient::new(channel);
-        Self { flight, engine }
+        let ctx = Arc::new(SessionContext::new());
+        let codec = RemoteExtensionCodec::default();
+        Self {
+            flight,
+            engine,
+            ctx,
+            codec,
+        }
     }
 
     pub async fn schema(&mut self, topic: &str) -> crate::Result<Schema> {
@@ -55,23 +87,29 @@ impl SynapseClient {
         FlightPublisher::try_new(self.clone(), topic).await
     }
 
-    pub async fn query<S: Into<String>>(&mut self, query: S) -> crate::Result<FlightStream> {
+    pub async fn query<S: Into<String>>(&mut self, query: S) -> crate::Result<Lazy> {
         let info = self.flight.execute(query.into(), None).await?;
-        self.get_stream(info).await
-    }
-
-    async fn get_stream(&mut self, info: FlightInfo) -> crate::Result<FlightStream> {
-        let mut stream = FlightStream::new();
-        for ep in &info.endpoint {
-            if !ep.location.is_empty() {
-                unimplemented!()
+        let ticket = match info.endpoint.len() {
+            0 => Err(crate::ClientError::MissingEndpoint),
+            1 => info.endpoint[0]
+                .ticket
+                .as_ref()
+                .ok_or_else(|| crate::ClientError::MissingTicket),
+            _ => unimplemented!(),
+        }?;
+        let msg = Any::decode(&*ticket.ticket)?;
+        let raw_plan = match Command::try_from(msg)? {
+            Command::TicketStatementQuery(ticket) => ticket.statement_handle,
+            cmd => {
+                return Err(FlightError::DecodeError(format!(
+                    "unexpected response command: {:?}",
+                    cmd
+                ))
+                .into())
             }
-            if let Some(ticket) = ep.ticket.clone() {
-                let resp = self.flight.do_get(ticket).await?.map_err(FlightError::from);
-                stream.add_partition(FlightRecordBatchStream::new_from_flight_data(resp));
-            }
-        }
-        Ok(stream)
+        };
+        let plan = logical_plan_from_bytes_with_extension_codec(&raw_plan, &self.ctx, &self.codec)?;
+        Ok(Lazy::new(plan, Box::new(RemoteBackend(self.clone()))))
     }
 }
 
@@ -111,5 +149,33 @@ impl Stream for FlightStream {
                 return Poll::Ready(None);
             }
         }
+    }
+}
+
+#[derive(Debug)]
+struct RemoteBackend(SynapseClient);
+
+#[tonic::async_trait]
+impl LazyBackend for RemoteBackend {
+    async fn stream(
+        &mut self,
+        plan: &LogicalPlan,
+    ) -> crate::Result<BoxStream<'static, crate::Result<RecordBatch>>> {
+        let statement_handle = logical_plan_to_bytes_with_extension_codec(plan, &self.0.codec)?;
+        let ticket = Ticket {
+            ticket: TicketStatementQuery { statement_handle }
+                .as_any()
+                .encode_to_vec()
+                .into(),
+        };
+        let stream = self
+            .0
+            .flight
+            .do_get(ticket)
+            .await?
+            .map_err(FlightError::from);
+        Ok(FlightRecordBatchStream::new_from_flight_data(stream)
+            .map_err(crate::Error::from)
+            .boxed())
     }
 }

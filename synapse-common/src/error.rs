@@ -39,8 +39,8 @@ pub enum Error {
     MissingMetadata(String),
     #[error("serialization error")]
     Serialization(BoxError),
-    #[error("row builder expected {0} columns but found {1} fields in schema")]
-    FieldCount(usize, usize),
+    #[error("row format expected {0} columns but found {1} columns")]
+    ColumnCount(usize, usize),
     #[error("row builder incompatible with field {0:?}")]
     IncompatibleRow(Arc<Field>),
     #[error("datafusion error")]
@@ -68,6 +68,13 @@ impl Error {
 
 impl From<serde_json::Error> for Error {
     fn from(value: serde_json::Error) -> Self {
+        Self::Serialization(Box::new(value))
+    }
+}
+
+#[cfg(feature = "flight")]
+impl From<prost::DecodeError> for Error {
+    fn from(value: prost::DecodeError) -> Self {
         Self::Serialization(Box::new(value))
     }
 }
@@ -110,9 +117,17 @@ pub enum EngineError {
     TableQueueFull,
     #[error("worker {id} exited with error: {error:?}")]
     Worker { id: String, error: String },
+    #[error("expected {expected} statement, got {actual}")]
+    InvalidSQL { expected: String, actual: String },
 }
 
 impl EngineError {
+    pub fn invalid_sql(expected: &str, actual: &str) -> Self {
+        Self::InvalidSQL {
+            expected: expected.to_string(),
+            actual: actual.to_string(),
+        }
+    }
     pub fn worker_panic(id: &str, error: &Box<dyn Any + Send + 'static>) -> Self {
         let error = if let Some(e) = error.downcast_ref::<String>() {
             e.clone()
@@ -180,4 +195,8 @@ pub enum ClientError {
     Server(#[from] tonic::Status),
     #[error("topic sink closed unexpectedly")]
     TopicClosed,
+    #[error("no flight ticket in server response")]
+    MissingTicket,
+    #[error("no flight endpoints in server response")]
+    MissingEndpoint,
 }

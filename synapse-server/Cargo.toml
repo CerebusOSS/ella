@@ -15,10 +15,12 @@ futures = { workspace = true }
 uuid = { workspace = true }
 dashmap = { workspace = true }
 datafusion = { workspace = true }
+datafusion-proto = { workspace = true }
 once_cell = { workspace = true }
 tracing = { workspace = true }
 flume = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt-multi-thread", "signal"] }
+serde_json = { workspace = true }
 tower-http = { version = "0.4.1", features = ["trace"] }
 
 [dev-dependencies]

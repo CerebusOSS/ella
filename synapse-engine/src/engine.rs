@@ -4,11 +4,12 @@ use std::{
     sync::Arc,
 };
 
-use datafusion::prelude::{DataFrame, SessionConfig, SessionContext};
+use datafusion::prelude::{SessionConfig, SessionContext};
 use synapse_common::Duration;
 
 use crate::{
     catalog::{Catalog, TopicId},
+    lazy::{Lazy, LocalBackend},
     metrics::MetricsServer,
     topic::{Topic, TopicConfig},
     util::Maintainer,
@@ -94,6 +95,8 @@ impl Engine {
         let df_cfg = SessionConfig::new()
             .with_create_default_catalog_and_schema(false)
             .with_default_catalog_and_schema(Catalog::CATALOG_ID, Catalog::SCHEMA_ID)
+            // TODO: support repartitioning
+            .with_round_robin_repartition(false)
             // TODO: support batches
             .with_coalesce_batches(false);
 
@@ -152,8 +155,10 @@ impl Engine {
         }
     }
 
-    pub async fn query(&self, sql: &str) -> crate::Result<DataFrame> {
-        Ok(self.ctx.session().sql(sql).await?)
+    pub async fn query(&self, sql: &str) -> crate::Result<Lazy> {
+        let state = self.ctx.session().state();
+        let plan = state.create_logical_plan(sql).await?;
+        Ok(Lazy::new(plan, Box::new(LocalBackend(state))))
     }
 
     pub async fn shutdown(&self) -> crate::Result<()> {
@@ -181,6 +186,11 @@ impl Engine {
         }
 
         out
+    }
+
+    #[doc(hidden)]
+    pub fn catalog(&self) -> Arc<Catalog> {
+        self.catalog.clone()
     }
 }
 
