@@ -12,7 +12,7 @@ use crate::{topic::Topic, Schema, SynapseContext};
 use std::sync::Arc;
 
 use datafusion::{
-    catalog::{catalog::CatalogProvider, schema::SchemaProvider},
+    catalog::{schema::SchemaProvider, CatalogProvider},
     datasource::TableProvider,
 };
 

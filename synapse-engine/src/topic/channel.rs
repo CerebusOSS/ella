@@ -16,8 +16,8 @@ use datafusion::{
     logical_expr::TableType,
     physical_expr::PhysicalSortExpr,
     physical_plan::{
-        insert::DataSink, project_schema, ExecutionPlan, Partitioning, RecordBatchStream,
-        SendableRecordBatchStream, Statistics,
+        insert::DataSink, project_schema, DisplayAs, DisplayFormatType, ExecutionPlan,
+        Partitioning, RecordBatchStream, SendableRecordBatchStream, Statistics,
     },
     prelude::Expr,
 };
@@ -147,12 +147,6 @@ pub struct Publisher {
     inner: PublisherInner,
 }
 
-impl Display for Publisher {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "publisher ({})", self.topic)
-    }
-}
-
 impl Sink<RecordBatch> for Publisher {
     type Error = crate::Error;
 
@@ -206,6 +200,25 @@ impl Publisher {
             topic: self.topic.clone(),
             schema: self.schema.clone(),
             inner: self.inner.clone_inner(),
+        }
+    }
+}
+
+impl Display for Publisher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "publisher ({})", self.topic)
+    }
+}
+
+impl DisplayAs for Publisher {
+    fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match t {
+            DisplayFormatType::Default => write!(f, "Publisher: {}", self.topic),
+            DisplayFormatType::Verbose => write!(
+                f,
+                "Publisher: topic={}, schema={:?}",
+                self.topic, self.schema
+            ),
         }
     }
 }
@@ -436,11 +449,7 @@ impl ExecutionPlan for ChannelExec {
         Statistics::default()
     }
 
-    fn fmt_as(
-        &self,
-        _t: datafusion::physical_plan::DisplayFormatType,
-        f: &mut std::fmt::Formatter,
-    ) -> std::fmt::Result {
+    fn fmt_as(&self, _t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let publishers = self.src.active.load(Ordering::Relaxed);
         write!(f, "ChannelExec: publishers={}", publishers)?;
         if let Some(limit) = self.limit {

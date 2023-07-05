@@ -1,7 +1,7 @@
 use arrow_flight::decode::FlightRecordBatchStream;
 use arrow_flight::encode::FlightDataEncoderBuilder;
 use arrow_flight::error::FlightError;
-use arrow_flight::sql::metadata::SqlInfoList;
+use arrow_flight::sql::metadata::{SqlInfoData, SqlInfoDataBuilder};
 use arrow_flight::sql::{
     server::FlightSqlService, ActionBeginSavepointRequest, ActionBeginSavepointResult,
     ActionBeginTransactionRequest, ActionBeginTransactionResult, ActionCancelQueryRequest,
@@ -29,7 +29,6 @@ use futures::{SinkExt, Stream, TryStreamExt};
 use once_cell::sync::Lazy;
 use prost::Message;
 use std::pin::Pin;
-use std::sync::Arc;
 use tonic::{Request, Response, Status, Streaming};
 
 use synapse_engine::Engine;
@@ -42,12 +41,13 @@ macro_rules! status {
     };
 }
 
-static SQL_INFO: Lazy<SqlInfoList> = Lazy::new(|| {
-    SqlInfoList::new()
-        .with_sql_info(SqlInfo::FlightSqlServerName, "synapse")
-        .with_sql_info(SqlInfo::FlightSqlServerVersion, env!("CARGO_PKG_VERSION"))
-        // https://github.com/apache/arrow/blob/f9324b79bf4fc1ec7e97b32e3cce16e75ef0f5e3/format/Schema.fbs#L24
-        .with_sql_info(SqlInfo::FlightSqlServerArrowVersion, "1.3")
+static SQL_INFO: Lazy<SqlInfoData> = Lazy::new(|| {
+    let mut builder = SqlInfoDataBuilder::new();
+    builder.append(SqlInfo::FlightSqlServerName, "synapse");
+    builder.append(SqlInfo::FlightSqlServerVersion, env!("CARGO_PKG_VERSION"));
+    // https://github.com/apache/arrow/blob/f9324b79bf4fc1ec7e97b32e3cce16e75ef0f5e3/format/Schema.fbs#L24
+    builder.append(SqlInfo::FlightSqlServerArrowVersion, "1.3");
+    builder.build().unwrap()
 });
 
 #[derive(Debug, Clone)]
@@ -259,7 +259,7 @@ impl FlightSqlService for SynapseSqlService {
         let endpoint = FlightEndpoint::new().with_ticket(ticket);
 
         let flight_info = FlightInfo::new()
-            .try_with_schema(SqlInfoList::schema())
+            .try_with_schema(query.into_builder(&SQL_INFO).schema().as_ref())
             .map_err(|e| status!("Unable to encode schema", e))?
             .with_endpoint(endpoint)
             .with_descriptor(flight_descriptor);
@@ -438,9 +438,12 @@ impl FlightSqlService for SynapseSqlService {
         query: CommandGetSqlInfo,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        let batch = SQL_INFO.filter(&query.info).encode();
+        let builder = query.into_builder(&SQL_INFO);
+        let schema = builder.schema();
+        let batch = builder.build();
+        // let batch = SQL_INFO.filter(&query.info).encode();
         let stream = FlightDataEncoderBuilder::new()
-            .with_schema(Arc::new(SqlInfoList::schema().clone()))
+            .with_schema(schema)
             .build(futures::stream::once(async { batch }))
             .map_err(Status::from);
         Ok(Response::new(Box::pin(stream)))

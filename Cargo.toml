@@ -29,12 +29,12 @@ time = { version = "0.3.20", features = ["serde-well-known"] }
 thiserror = "1.0.40"
 serde_json = "1.0.95"
 paste = "1.0.12"
-datafusion = "26.0.0"
-datafusion-proto = "26.0.0"
-arrow = { version = "41.0.0" }
-arrow-schema = { version = "41.0.0", features = ["serde"] }
-arrow-flight = { version = "41.0.0", features = ["flight-sql-experimental"] }
-parquet = "41.0.0"
+datafusion = "27.0.0"
+datafusion-proto = "27.0.0"
+arrow = { version = "42.0.0" }
+arrow-schema = { version = "42.0.0", features = ["serde"] }
+arrow-flight = { version = "42.0.0", features = ["flight-sql-experimental"] }
+parquet = "42.0.0"
 tracing = "0.1.37"
 tokio = { version = "1.27.0" }
 futures = "0.3.28"
@@ -60,7 +60,3 @@ dashmap = "5.4.0"
 url = { version = "2.3.1", features = ["serde"] }
 flume = "0.10.14"
 pin-project-lite = "0.2.9"
-
-[patch.crates-io]
-datafusion = { git = "https://github.com/apache/arrow-datafusion", rev = "1d3860dc813725b5a987aae4c3a8f4a7b2bfdb2d" }
-datafusion-proto = { git = "https://github.com/apache/arrow-datafusion", rev = "1d3860dc813725b5a987aae4c3a8f4a7b2bfdb2d" }
