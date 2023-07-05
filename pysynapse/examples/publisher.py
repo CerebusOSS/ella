@@ -4,22 +4,29 @@ import pyarrow as pa
 def main(root):
     schema = synapse.schema([
         synapse.field("i", synapse.int32, required=True, index='ascending'),
-        synapse.field("x", synapse.float32),
+        synapse.field("x", synapse.float32, row_shape=(2, )),
         synapse.field("y", synapse.float32),
     ])
 
-    with synapse.runtime(root) as rt:
+    fixed = pa.fixed_shape_tensor(pa.float32(), (2, ))
+
+    with synapse.engine(root) as rt:
         topic = rt.topic("point", schema)
         pb = topic.publish()
         for i in range(100):
             batch = pa.record_batch(
                 [
                     pa.array([i]),
-                    pa.array([i * 0.5]),
+                    pa.array([[i * 0.5, i * 0.25]], type=fixed),
                     pa.array([i * 10.]),
                 ],
-                schema=schema.arrow_schema,
+                schema=pa.schema([
+                    pa.field("i", pa.int32(), nullable=False),
+                    pa.field("x", fixed),
+                    pa.field("y", pa.float32()),
+                ]),
             )
+
             pb.try_write(batch)
 
 
