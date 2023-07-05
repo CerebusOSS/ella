@@ -17,9 +17,8 @@ use arrow_flight::sql::{
 };
 use arrow_flight::{
     flight_service_server::FlightService, Action, FlightData, FlightDescriptor, FlightEndpoint,
-    FlightInfo, HandshakeRequest, HandshakeResponse, IpcMessage, SchemaAsIpc, Ticket,
+    FlightInfo, HandshakeRequest, HandshakeResponse, Ticket,
 };
-use datafusion::arrow::ipc::writer::IpcWriteOptions;
 use datafusion::physical_plan::execute_stream;
 use datafusion::sql::parser::{CopyToSource, CopyToStatement, Statement};
 use datafusion::sql::sqlparser::ast::{Ident, ObjectName};
@@ -28,7 +27,6 @@ use datafusion_proto::bytes::{
 };
 use futures::{SinkExt, Stream, TryStreamExt};
 use once_cell::sync::Lazy;
-use prost::bytes::Bytes;
 use prost::Message;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -36,7 +34,6 @@ use tonic::{Request, Response, Status, Streaming};
 
 use synapse_engine::Engine;
 
-use crate::prepare::{PreparedStatement, PreparedStatements};
 use crate::remote::SynapseExtensionCodec;
 
 macro_rules! status {
@@ -56,20 +53,13 @@ static SQL_INFO: Lazy<SqlInfoList> = Lazy::new(|| {
 #[derive(Debug, Clone)]
 pub struct SynapseSqlService {
     engine: Engine,
-    statements: PreparedStatements,
     codec: SynapseExtensionCodec,
 }
 
 impl SynapseSqlService {
     pub fn new(engine: Engine) -> Self {
-        let ctx = engine.ctx().session().clone();
-        let statements = PreparedStatements::new(ctx);
         let codec = SynapseExtensionCodec::new(&engine);
-        Self {
-            engine,
-            statements,
-            codec,
-        }
+        Self { engine, codec }
     }
 }
 
@@ -579,34 +569,12 @@ impl FlightSqlService for SynapseSqlService {
     #[tracing::instrument(skip(self, _request))]
     async fn do_action_create_prepared_statement(
         &self,
-        query: ActionCreatePreparedStatementRequest,
+        _query: ActionCreatePreparedStatementRequest,
         _request: Request<Action>,
     ) -> Result<ActionCreatePreparedStatementResult, Status> {
-        let statement = PreparedStatement::new(self.engine.ctx().session(), &query.query).await?;
-        let handle = statement.handle().to_string();
-        let parameter_schema = match statement.parameter_schema()? {
-            Some(schema) => {
-                let message: IpcMessage = SchemaAsIpc::new(&schema, &IpcWriteOptions::default())
-                    .try_into()
-                    .map_err(|e| status!("Unable to serialize schema", e))?;
-                message.0
-            }
-            None => Bytes::default(),
-        };
-
-        let message = SchemaAsIpc::new(&statement.schema(), &IpcWriteOptions::default())
-            .try_into()
-            .map_err(|e| status!("Unable to serialize schema", e))?;
-        let IpcMessage(schema_bytes) = message;
-
-        self.statements.insert(handle.clone(), statement);
-
-        let res = ActionCreatePreparedStatementResult {
-            prepared_statement_handle: handle.into(),
-            dataset_schema: schema_bytes,
-            parameter_schema,
-        };
-        Ok(res)
+        Err(Status::unimplemented(
+            "do_action_create_prepared_statement not implemented",
+        ))
     }
 
     #[tracing::instrument(skip(self, _request))]
