@@ -68,9 +68,7 @@ impl SynapseClient {
             .map_err(crate::ClientError::from)?
             .into_inner();
 
-        resp.schema
-            .map(|schema| Schema::try_from(schema))
-            .transpose()
+        resp.schema.map(Schema::try_from).transpose()
     }
 
     // pub async fn topics(&mut self) -> crate::Result<()> {
@@ -127,17 +125,16 @@ impl SynapseClient {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FlightStream {
     partitions: VecDeque<FlightRecordBatchStream>,
 }
 
 impl FlightStream {
     pub fn new() -> Self {
-        Self {
-            partitions: VecDeque::new(),
-        }
+        Self::default()
     }
+
     pub fn add_partition(&mut self, part: FlightRecordBatchStream) {
         self.partitions.push_back(part);
     }

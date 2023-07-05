@@ -49,7 +49,7 @@ impl Topic {
         let schema = Arc::new(state.schema.clone());
         let config = ctx.config().topic_config(id.clone()).clone();
         let shards = Arc::new(ShardManager::new(
-            ctx.clone(),
+            ctx,
             schema.clone(),
             config.shard_config(),
             state,

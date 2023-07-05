@@ -200,7 +200,7 @@ impl ShardManager {
             topic.clone(),
             ctx.clone(),
             stop.clone(),
-            config.clone(),
+            config,
             shards.clone(),
             output,
         );
@@ -330,7 +330,7 @@ impl TableProvider for ShardManager {
             .unwrap_or_else(|| self.schema.arrow_schema().clone());
 
         let config = FileScanConfig {
-            object_store_url: ObjectStoreUrl::parse(&self.path.store_url())?,
+            object_store_url: ObjectStoreUrl::parse(self.path.store_url())?,
             file_schema,
             file_groups: vec![files],
             statistics: Statistics::default(),

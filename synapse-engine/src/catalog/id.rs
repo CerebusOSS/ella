@@ -36,6 +36,7 @@ macro_rules! impl_uuid_newtype {
         )]
         pub struct $t(Uuid);
 
+        #[allow(clippy::new_without_default)]
         impl $t {
             pub fn new() -> Self {
                 Self(Uuid::new_v7(Timestamp::now(NoContext)))

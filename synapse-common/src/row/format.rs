@@ -32,17 +32,31 @@ pub trait RowBatchBuilder<R>: Debug + Clone + 'static {
     }
 }
 
+/// Wrapper around Arrow data that implements typed indexing by row.
 pub trait RowFormatView<R>:
     Debug + IntoIterator<Item = R, IntoIter = RowViewIter<R, Self>> + Clone + 'static
 {
+    /// Returns the number of wrapped rows.
     fn len(&self) -> usize;
+
+    /// Returns `true` if the view contains `0` rows.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Returns the `i`th row.
+    ///
+    /// Panics if `i >= len`.
     fn row(&self, i: usize) -> R;
+
+    /// Returns the `i`th row without bounds checking.
+    ///
+    /// # Safety
+    /// Implementations must return a valid result when `i < len`.
+    /// Calling this method where `i >= len` is undefined behavior.
     unsafe fn row_unchecked(&self, i: usize) -> R;
 
+    /// Returns an iterator over the rows in this view.
     fn iter(&self) -> RowViewIter<R, Self> {
         self.clone().into_iter()
     }

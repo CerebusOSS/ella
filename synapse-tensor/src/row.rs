@@ -23,7 +23,7 @@ where
         if fields.len() != 1 {
             return Err(crate::Error::ColumnCount(1, fields.len()));
         }
-        let field = &fields[0];
+        let field = fields.first().unwrap();
         let (dtype, row_shape) = match field.data_type() {
             DataType::FixedSizeList(inner, row_size) => {
                 let dtype = TensorType::from_arrow(inner.data_type())?;
@@ -40,7 +40,7 @@ where
                 (dtype, row_shape)
             }
             dtype => {
-                let dtype = TensorType::from_arrow(&dtype)?;
+                let dtype = TensorType::from_arrow(dtype)?;
                 let row_shape = Dyn::from([]);
                 (dtype, row_shape)
             }

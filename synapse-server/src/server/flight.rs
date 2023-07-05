@@ -69,7 +69,7 @@ impl SynapseSqlService {
         ticket: &[u8],
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
         let ctx = self.engine.ctx().session();
-        let plan = logical_plan_from_bytes_with_extension_codec(&ticket, ctx, &self.codec)
+        let plan = logical_plan_from_bytes_with_extension_codec(ticket, ctx, &self.codec)
             .map_err(crate::Error::from)?;
         let state = ctx.state();
         let plan = state
@@ -517,7 +517,7 @@ impl FlightSqlService for SynapseSqlService {
                 source: CopyToSource::Relation(ObjectName(idents)),
                 target,
                 ..
-            }) if &idents[..] == &[Ident::new("this")] => {
+            }) if idents[..] == [Ident::new("this")] => {
                 let mut stream = FlightRecordBatchStream::new_from_flight_data(
                     request.into_inner().map_err(Into::into),
                 );

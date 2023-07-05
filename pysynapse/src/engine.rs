@@ -31,7 +31,7 @@ impl PyEngine {
     }
 
     fn shutdown(&self, py: Python) -> synapse::Result<()> {
-        Ok(wait_for_future(py, self.engine.shutdown())?)
+        wait_for_future(py, self.engine.shutdown())
     }
 
     #[pyo3(signature = (name, schema=None))]

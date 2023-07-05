@@ -118,7 +118,7 @@ impl Engine {
             config
                 .serve_metrics
                 .as_ref()
-                .map(|addr| MetricsServer::start(addr.clone())),
+                .map(|addr| MetricsServer::start(*addr)),
         );
         Ok(Self {
             ctx,

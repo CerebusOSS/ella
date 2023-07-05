@@ -483,7 +483,7 @@ impl Stream for ChannelStream {
             Some(Ok(mut batch)) => {
                 self.rows += batch.num_rows();
                 if let Some(projection) = &self.projection {
-                    batch = batch.project(&projection)?;
+                    batch = batch.project(projection)?;
                 }
                 Some(Ok(batch))
             }

@@ -54,7 +54,7 @@ pub struct CreateShard {
 impl CreateShard {
     pub fn new(topic: TopicId, schema: Schema, root: &Path) -> Self {
         let shard = ShardId::new();
-        let path = shard.encode_path(&root, "parquet");
+        let path = shard.encode_path(root, "parquet");
         Self {
             uuid: TransactionId::new(),
             topic,
@@ -114,7 +114,7 @@ pub struct CompactShards {
 impl CompactShards {
     pub fn new(topic: TopicId, src: Vec<ShardId>, schema: Schema, root: &Path) -> Self {
         let dst = ShardId::generate_from(src.first().expect("cannot compact empty shard list"));
-        let path = dst.encode_path(&root, "parquet");
+        let path = dst.encode_path(root, "parquet");
         Self {
             uuid: TransactionId::new(),
             topic,

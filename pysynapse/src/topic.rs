@@ -39,7 +39,7 @@ impl PyPublisher {
         match self.inner.send(batch).now_or_never() {
             Some(Ok(_)) => Ok(()),
             Some(Err(err)) => Err(err.into()),
-            None => Err(PyRuntimeError::new_err("failed to write to table").into()),
+            None => Err(PyRuntimeError::new_err("failed to write to table")),
         }
     }
 

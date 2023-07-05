@@ -59,7 +59,7 @@ where
                         Err(err) => return Poll::Ready(Some(Err(err))),
                     }
                 }
-                Some(Err(err)) => return Poll::Ready(Some(Err(err.into()))),
+                Some(Err(err)) => return Poll::Ready(Some(Err(err))),
                 None => return Poll::Ready(None),
             }
         }

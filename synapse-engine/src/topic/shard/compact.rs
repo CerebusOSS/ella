@@ -71,7 +71,7 @@ pub async fn compact_shards(
             meta.file_metadata().schema_descr(),
             meta.file_metadata().key_value_metadata(),
         )?;
-        if &arrow_schema != &*file_schema {
+        if arrow_schema != *file_schema {
             schema_changed = true;
             break;
         }

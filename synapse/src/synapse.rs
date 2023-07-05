@@ -98,7 +98,6 @@ impl EngineBuilder {
             Engine::start_with_config(&self.root, self.config.clone().unwrap_or_default()).await?;
         let server = self
             .addr
-            .clone()
             .map(|addr| SynapseServer::start(Server::builder(), engine.clone(), addr));
         let server = Arc::new(Mutex::new(server));
         Ok(Synapse(SynapseInner::Local { engine, server }))

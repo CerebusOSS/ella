@@ -156,7 +156,7 @@ where
         S: RemoveAxis,
     {
         let len = self.shape().axis(axis);
-        let shift = -1 * roll.checked_rem(len as isize).unwrap_or_default();
+        let shift = -roll.checked_rem(len as isize).unwrap_or_default();
         if roll == 0 {
             return self.clone();
         }

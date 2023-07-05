@@ -145,7 +145,7 @@ impl JobHandle {
     }
 
     pub fn send(&mut self, job: WriteJob) -> crate::Result<()> {
-        if let Err(_) = self.input.try_send(job) {
+        if self.input.try_send(job).is_err() {
             if let Some(handle) = &mut self.handle {
                 if handle.is_finished() {
                     match self

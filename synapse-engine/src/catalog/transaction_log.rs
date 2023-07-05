@@ -52,7 +52,7 @@ impl TransactionLog {
         let mut snapshot = self
             .load_newest_snapshot()
             .await?
-            .unwrap_or_else(|| Snapshot::empty());
+            .unwrap_or_else(Snapshot::empty);
         snapshot.commit_many(transactions.clone())?;
         tracing::info!(uuid=%snapshot.uuid, "saving catalog snapshot");
 
@@ -70,7 +70,7 @@ impl TransactionLog {
         let mut snapshot = self
             .load_newest_snapshot()
             .await?
-            .unwrap_or_else(|| Snapshot::empty());
+            .unwrap_or_else(Snapshot::empty);
         tracing::debug!(uuid=%snapshot.uuid, "loaded snapshot");
         snapshot.commit_many(self.load_transactions().await?)?;
         Ok(snapshot)

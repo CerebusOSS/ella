@@ -55,22 +55,20 @@ impl RwBuffer {
         let compacting = Arc::new(compacting);
         let writing = Arc::new(writing);
         let stop = Arc::new(Notify::new());
+        let worker = RwBufferWorker {
+            topic: topic.clone(),
+            recv,
+            compacting_in: compacting.clone(),
+            compacting_out,
+            writing_in: writing.clone(),
+            writing_out,
+            shards,
+            stop: stop.clone(),
+            config: config.clone(),
+            schema: schema.clone(),
+        };
 
-        let handle = tokio::spawn(
-            Self::run(
-                topic.clone(),
-                recv,
-                compacting.clone(),
-                compacting_out,
-                writing.clone(),
-                writing_out,
-                shards,
-                stop.clone(),
-                config.clone(),
-                schema.clone(),
-            )
-            .instrument(tracing::trace_span!("rw", %topic)),
-        );
+        let handle = tokio::spawn(worker.run().instrument(tracing::trace_span!("rw", %topic)));
         let handle = Mutex::new(Some(handle));
 
         Self {
@@ -108,28 +106,33 @@ impl RwBuffer {
             *lock = None;
         }
     }
+}
 
-    async fn run(
-        topic: TopicId,
-        recv: flume::Receiver<RecordBatch>,
-        compacting_in: Arc<WorkQueueIn<RecordBatch>>,
-        mut compacting_out: WorkQueueOut<RecordBatch>,
-        writing_in: Arc<WorkQueueIn<()>>,
-        mut writing_out: WorkQueueOut<()>,
-        shards: Arc<ShardManager>,
-        stop: Arc<Notify>,
-        config: RwBufferConfig,
-        schema: Arc<Schema>,
-    ) {
-        let wait_stop = stop.notified();
+#[derive(Debug)]
+struct RwBufferWorker {
+    topic: TopicId,
+    recv: flume::Receiver<RecordBatch>,
+    compacting_in: Arc<WorkQueueIn<RecordBatch>>,
+    compacting_out: WorkQueueOut<RecordBatch>,
+    writing_in: Arc<WorkQueueIn<()>>,
+    writing_out: WorkQueueOut<()>,
+    shards: Arc<ShardManager>,
+    stop: Arc<Notify>,
+    config: RwBufferConfig,
+    schema: Arc<Schema>,
+}
+
+impl RwBufferWorker {
+    async fn run(mut self) {
+        let wait_stop = self.stop.notified();
         futures::pin_mut!(wait_stop);
 
         let compact_buffer = |rows: usize| {
-            let arrow_schema = schema.arrow_schema().clone();
-            let res = compacting_in.process(|mut values| {
+            let arrow_schema = self.schema.arrow_schema().clone();
+            let res = self.compacting_in.process(|mut values| {
                 async move {
                     if values.len() == 1 {
-                        return values.pop().unwrap();
+                        values.pop().unwrap()
                     } else {
                         tokio::task::spawn_blocking(move || {
                             compute::concat_batches(&arrow_schema, &values).unwrap()
@@ -141,16 +144,16 @@ impl RwBuffer {
                 .in_current_span()
             });
             match res {
-                Ok(_) => tracing::debug!(%topic, rows, "compacting r/w buffer"),
+                Ok(_) => tracing::debug!(topic=%self.topic, rows, "compacting r/w buffer"),
                 Err(error) => tracing::error!(?error, rows, "failed to compact r/w buffer"),
             }
         };
 
         let write_batch = |batch: RecordBatch| {
             let rows = batch.num_rows();
-            writing_in.push(batch);
-            let shards = shards.clone();
-            let res = writing_in.try_process(|values| {
+            self.writing_in.push(batch);
+            let shards = self.shards.clone();
+            let res = self.writing_in.try_process(|values| {
                 async move {
                     let _ = shards.write(values)?.await;
                     Ok(())
@@ -158,7 +161,7 @@ impl RwBuffer {
                 .in_current_span()
             });
             match res {
-                Ok(_) => tracing::debug!(%topic, rows, "writing compacted buffer"),
+                Ok(_) => tracing::debug!(topic=%self.topic, rows, "writing compacted buffer"),
                 Err(error) => tracing::error!(?error, rows, "failed to write compacted buffer"),
             }
         };
@@ -167,11 +170,11 @@ impl RwBuffer {
         loop {
             tokio::select! {
                 biased;
-                batch = recv.recv_async() => match batch {
+                batch = self.recv.recv_async() => match batch {
                     Ok(batch) => {
                         len += batch.num_rows();
-                        compacting_in.push(batch);
-                        if len >= config.write_batch_size {
+                        self.compacting_in.push(batch);
+                        if len >= self.config.write_batch_size {
                             compact_buffer(len);
                             len = 0;
                         }
@@ -179,29 +182,29 @@ impl RwBuffer {
                     Err(_) => break,
                 },
                 // Take compacted batches from the compacting queue and push them to th write queue.
-                compacted = compacting_out.ready() => match compacted {
+                compacted = self.compacting_out.ready() => match compacted {
                     Some(res) => {
                         match res {
                             Ok(batch) => write_batch(batch),
-                            Err(error) => tracing::error!(%topic, ?error, "failed to compact records"),
+                            Err(error) => tracing::error!(topic=%self.topic, ?error, "failed to compact records"),
                         }
                     },
                     None => unreachable!(),
                 },
-                Some(res) = writing_out.ready() => {
+                Some(res) = self.writing_out.ready() => {
                     if let Err(error) = res {
-                        tracing::error!(%topic, ?error, "failed to write batch to disk");
+                        tracing::error!(topic=%self.topic, ?error, "failed to write batch to disk");
                     }
                 },
                 _ = &mut wait_stop => break,
             }
         }
-        tracing::debug!(topic=%topic, "shutting down R/W buffer worker");
+        tracing::debug!(topic=%self.topic, "shutting down R/W buffer worker");
 
-        for batch in recv.drain() {
+        for batch in self.recv.drain() {
             len += batch.num_rows();
-            compacting_in.push(batch);
-            if len >= config.write_batch_size {
+            self.compacting_in.push(batch);
+            if len >= self.config.write_batch_size {
                 compact_buffer(len);
                 len = 0;
             }
@@ -210,19 +213,21 @@ impl RwBuffer {
             compact_buffer(len);
         }
         // Finish compacting any remaining rows and send the compacted batches to the write queue.
-        compacting_out.close();
-        while let Some(res) = compacting_out.ready().await {
+        self.compacting_out.close();
+        while let Some(res) = self.compacting_out.ready().await {
             match res {
                 Ok(batch) => write_batch(batch),
-                Err(error) => tracing::error!(%topic, ?error, "failed to compact records"),
+                Err(error) => {
+                    tracing::error!(topic=%self.topic, ?error, "failed to compact records")
+                }
             }
         }
 
         // Close the write queue.
         // We don't need to wait for the queue to finish since that will be handled by the shard writer.
-        writing_out.close();
+        self.writing_out.close();
 
-        tracing::debug!(topic=%topic, "R/W buffer worker shutdown");
+        tracing::debug!(topic=%self.topic, "R/W buffer worker shutdown");
     }
 }
 

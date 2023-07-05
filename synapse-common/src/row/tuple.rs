@@ -99,7 +99,7 @@ macro_rules! impl_tuple_row {
                 self.len
             }
 
-            #[allow(unused_variables)]
+            #[allow(unused_variables, clippy::unused_unit)]
             fn row(&self, i: usize) -> ($($t,)*) {
                 let ($(ref [< $t:lower >],)*) = &self.values;
                 ($(
@@ -107,7 +107,7 @@ macro_rules! impl_tuple_row {
                 )*)
             }
 
-            #[allow(unused_variables)]
+            #[allow(unused_variables, clippy::unused_unit)]
             unsafe fn row_unchecked(&self, i: usize) -> ($($t,)*) {
                 let ($(ref [< $t:lower >],)*) = &self.values;
                 ($(

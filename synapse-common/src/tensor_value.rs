@@ -7,24 +7,45 @@ use datafusion::arrow::{
 use std::fmt::{Debug, Write};
 use time::format_description::well_known::Rfc3339;
 
+/// A trait for data that can be stored as in a tensor.
 pub trait TensorValue: Debug + Clone + PartialEq + PartialOrd + 'static {
+    /// Arrow array type used to store raw values.
     type Array: Array + Clone + 'static;
+    /// Masked value type. For `Option<T>` this is `Option<T>`.
+    /// For all other `T` this should be `Option<T>`.
     type Masked: TensorValue<Array = Self::Array>;
+    /// Unmasked value type. For Option<T> shis is `T`. For all other `T` this should be `T`.
     type Unmasked: TensorValue<Array = Self::Array>;
 
     const TENSOR_TYPE: TensorType;
+    /// Whether this type is nullable/maskable. Should be `false` for all types except `Option<T>`.
     const NULLABLE: bool;
 
+    /// Returns the value at index `i` in `array`.
+    /// Panics if `i >= array.len()`.
     fn value(array: &Self::Array, i: usize) -> Self;
+    /// Returns the value at index `i` without bounds checking.
+    ///
+    /// # Safety
+    /// Calling this method where `i >= array.len()` is undefined behavior.
     unsafe fn value_unchecked(array: &Self::Array, i: usize) -> Self;
 
+    /// Wrap `value` in its masked type.
+    ///
+    /// For `Option<T>` this is a no-op. For all other types this returns `Some(T)`.
     fn to_masked(value: Self) -> Self::Masked;
+    /// Unwrap the inner value from its masked type.
+    ///
+    /// For `Option<T>` this method panics unless `value` is `Some(T)`.
+    /// For all other types this is a no-op.
     fn to_unmasked(value: Self) -> Self::Unmasked;
 
+    /// Constructs an array from an iterator of masked values.
     fn from_iter_masked<I>(iter: I) -> Self::Array
     where
         I: IntoIterator<Item = Self::Masked>;
 
+    /// Constructs an array from an iterator of values.
     fn from_iter<I>(iter: I) -> Self::Array
     where
         I: IntoIterator<Item = Self>,
@@ -33,10 +54,25 @@ pub trait TensorValue: Debug + Clone + PartialEq + PartialOrd + 'static {
     }
 
     fn from_vec(values: Vec<Self>) -> Self::Array;
+
+    /// Constructs an array from an iterator of masked values.
+    ///
+    /// `iter` must implement [`ExactSizeIterator`].
+    ///
+    /// # Safety
+    /// Calling this method with an iterator that doesn't correctly report its
+    /// length is undefined behavior.
     unsafe fn from_trusted_len_iter_masked<I>(iter: I) -> Self::Array
     where
         I: IntoIterator<Item = Self::Masked>;
 
+    /// Constructs an array from an iterator of values.
+    ///
+    /// `iter` must implement [`ExactSizeIterator`].
+    ///
+    /// # Safety
+    /// Calling this method with an iterator that doesn't correctly report its
+    /// length is undefined behavior.
     unsafe fn from_trusted_len_iter<I>(iter: I) -> Self::Array
     where
         I: IntoIterator<Item = Self>,
@@ -44,9 +80,23 @@ pub trait TensorValue: Debug + Clone + PartialEq + PartialOrd + 'static {
         Self::from_trusted_len_iter_masked(iter.into_iter().map(Self::to_masked))
     }
 
+    /// Returns a slice of `array` from `offset` to `offset + length`.
+    ///
+    /// Panics if `offset + length` > `array.len()`.
     fn slice(array: &Self::Array, offset: usize, length: usize) -> Self::Array;
+    /// Constructs an array from [`ArrowData`].
+    ///
+    /// Panics if `data` is not convertable to [`Self::Array`].
     fn from_array_data(data: ArrayData) -> Self::Array;
+
+    /// Writes the value of `self` to formatter `f`.
     fn format(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+}
+
+/// Trait that allows casting between [`TensorValue::Masked`] and [`Option<TensorValue>`]
+pub trait MaskedValue: TensorValue {
+    fn to_option(self) -> Option<Self::Unmasked>;
+    fn from_option(value: Option<Self::Unmasked>) -> Self;
 }
 
 macro_rules! impl_tensor_value_primitive {
@@ -188,11 +238,6 @@ impl TensorValue for bool {
     fn format(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         <Self as std::fmt::Display>::fmt(self, f)
     }
-}
-
-pub trait MaskedValue: TensorValue {
-    fn to_option(self) -> Option<Self::Unmasked>;
-    fn from_option(value: Option<Self::Unmasked>) -> Self;
 }
 
 impl<T> TensorValue for Option<T>
