@@ -1,7 +1,9 @@
 use std::{fmt::Debug, pin::Pin, task::Poll};
 
 use datafusion::{
-    arrow::record_batch::RecordBatch, execution::context::SessionState, logical_expr::LogicalPlan,
+    arrow::{compute::concat_batches, record_batch::RecordBatch},
+    execution::context::SessionState,
+    logical_expr::LogicalPlan,
     physical_plan::execute_stream,
 };
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
@@ -16,7 +18,10 @@ pub trait LazyBackend: Debug + Send + Sync {
     ) -> crate::Result<BoxStream<'static, crate::Result<RecordBatch>>>;
 
     async fn execute(&mut self, plan: &LogicalPlan) -> crate::Result<DataFrame> {
-        todo!()
+        let schema = (**plan.schema()).clone().into();
+        let batches = self.stream(plan).await?.try_collect::<Vec<_>>().await?;
+
+        concat_batches(&schema, &batches)?.try_into()
     }
 }
 
@@ -53,16 +58,11 @@ impl Lazy {
 
     pub async fn stream(mut self) -> crate::Result<LazyStream> {
         Ok(LazyStream(self.backend.stream(&self.plan).await?))
-
-        // let plan = self.state.create_physical_plan(&self.plan).await?;
-        // Ok(LazyStream(execute_stream(plan, self.state.task_ctx())?))
     }
 
     pub async fn rows<R: RowFormat>(self) -> crate::Result<RowStream<R>> {
         Ok(self.stream().await?.rows())
     }
-
-    // pub fn col(&self, col: &str)
 }
 
 pub struct LazyStream(BoxStream<'static, crate::Result<RecordBatch>>);
