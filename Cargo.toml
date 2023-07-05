@@ -18,6 +18,7 @@ authors = ["Dexter Duckworth <dexterduck@users.noreply.github.com>"]
 synapse-common = { path = "./synapse-common" }
 synapse-tensor = { path = "./synapse-tensor" }
 synapse-engine = { path = "./synapse-engine" }
+synapse-server = { path = "./synapse-server" }
 synapse = { path = "./synapse" }
 pysynapse = { path = "./pysynapse" }
 

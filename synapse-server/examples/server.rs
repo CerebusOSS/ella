@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
     let config = EngineConfig::new().with_serve_metrics("0.0.0.0:8888");
 
     let engine = synapse_engine::Engine::start_with_config("file:///tmp/synapse", config).await?;
-    let server = SynapseServer::start(
+    let mut server = SynapseServer::start(
         Server::builder(),
         engine.clone(),
         "0.0.0.0:50051".parse().unwrap(),

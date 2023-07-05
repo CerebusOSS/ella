@@ -23,8 +23,8 @@ impl<R: RowFormat> RowFormat for Row<R> {
     type View = RowView<R>;
 
     fn builder(fields: &[Arc<Field>]) -> crate::Result<Self::Builder> {
-        if fields.len() != 1 {
-            return Err(crate::Error::ColumnCount(1, fields.len()));
+        if fields.len() != Self::COLUMNS {
+            return Err(crate::Error::ColumnCount(Self::COLUMNS, fields.len()));
         }
         let time = Time::builder(&fields[..1])?;
         let values = R::builder(&fields[1..])?;
@@ -32,8 +32,8 @@ impl<R: RowFormat> RowFormat for Row<R> {
     }
 
     fn view(rows: usize, fields: &[Arc<Field>], arrays: &[ArrayRef]) -> crate::Result<Self::View> {
-        if arrays.len() != 1 {
-            return Err(crate::Error::ColumnCount(1, arrays.len()));
+        if arrays.len() != Self::COLUMNS {
+            return Err(crate::Error::ColumnCount(Self::COLUMNS, arrays.len()));
         }
         let time = Time::view(rows, &fields[..1], &arrays[..1])?;
         let values = R::view(rows, &fields[1..], &arrays[1..])?;

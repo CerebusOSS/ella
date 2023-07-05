@@ -27,7 +27,7 @@ use crate::{
     remote::RemoteExtensionCodec,
 };
 
-use self::publisher::FlightPublisher;
+pub use self::publisher::FlightPublisher;
 
 #[derive(Clone)]
 pub struct SynapseClient {
@@ -60,14 +60,17 @@ impl SynapseClient {
         }
     }
 
-    pub async fn schema(&mut self, topic: &str) -> crate::Result<Schema> {
+    pub async fn schema(&mut self, topic: &str) -> crate::Result<Option<Schema>> {
         let resp = self
             .engine
             .get_topic(gen::TopicId::from(topic.to_string()))
             .await
             .map_err(crate::ClientError::from)?
             .into_inner();
-        Schema::try_from(resp.schema.unwrap_or_default())
+
+        resp.schema
+            .map(|schema| Schema::try_from(schema))
+            .transpose()
     }
 
     // pub async fn topics(&mut self) -> crate::Result<()> {
@@ -82,6 +85,17 @@ impl SynapseClient {
     //     }
     //     Ok(())
     // }
+
+    pub async fn create_topic(&mut self, topic: &str, schema: Schema) -> crate::Result<()> {
+        self.engine
+            .create_topic(gen::Topic {
+                name: topic.to_string(),
+                schema: Some(schema.into()),
+            })
+            .await
+            .map_err(crate::ClientError::from)?;
+        Ok(())
+    }
 
     pub async fn publish(&self, topic: &str) -> crate::Result<FlightPublisher> {
         FlightPublisher::try_new(self.clone(), topic).await

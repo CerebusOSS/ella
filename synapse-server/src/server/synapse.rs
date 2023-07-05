@@ -1,6 +1,6 @@
 use crate::gen::{self, engine_service_server::EngineService};
 use futures::stream::BoxStream;
-use synapse_engine::Engine;
+use synapse_engine::{Engine, Schema};
 use tonic::{Request, Response};
 
 #[derive(Debug, Clone)]
@@ -29,7 +29,15 @@ impl EngineService for SynapseEngineService {
         &self,
         request: Request<gen::Topic>,
     ) -> tonic::Result<Response<gen::Empty>> {
-        todo!()
+        let req = request.into_inner();
+        let name = req.name;
+        let schema = Schema::try_from(
+            req.schema
+                .ok_or_else(|| tonic::Status::invalid_argument("missing topic schema"))?,
+        )?;
+        self.engine.topic(name).create(schema).await?;
+
+        Ok(Response::new(gen::Empty::default()))
     }
 
     async fn get_topic(
@@ -37,13 +45,11 @@ impl EngineService for SynapseEngineService {
         request: Request<gen::TopicId>,
     ) -> tonic::Result<Response<gen::Topic>> {
         let name = request.into_inner().name;
-        let topic =
-            self.engine.topic(&name).get().ok_or_else(|| {
-                tonic::Status::not_found(format!("topic {} does not exist", name))
-            })?;
-        Ok(Response::new(gen::Topic {
-            name,
-            schema: Some((**topic.schema()).clone().into()),
-        }))
+        let schema = self
+            .engine
+            .topic(&name)
+            .get()
+            .map(|topic| (**topic.schema()).clone().into());
+        Ok(Response::new(gen::Topic { name, schema }))
     }
 }

@@ -34,9 +34,7 @@ impl Debug for FlightPublisher {
 }
 
 impl FlightPublisher {
-    pub async fn try_new(mut client: SynapseClient, topic: &str) -> crate::Result<Self> {
-        let schema = Arc::new(client.schema(topic).await?);
-
+    pub fn new_with_schema(mut client: SynapseClient, topic: &str, schema: Arc<Schema>) -> Self {
         let (send, recv) = flume::bounded(1);
         let send = send.into_sink();
         let descriptor = FlightDescriptor::new_cmd(
@@ -59,15 +57,26 @@ impl FlightPublisher {
             resp.message().await.map_err(crate::ClientError::from)?;
             Ok(())
         });
-        Ok(Self {
+        Self {
             send,
             handle,
             schema,
             stop,
-        })
+        }
     }
 
-    pub fn rows<R: RowFormat>(self, buffer: usize) -> crate::Result<RowSink<R, Self>> {
+    pub async fn try_new(mut client: SynapseClient, topic: &str) -> crate::Result<Self> {
+        let schema = Arc::new(
+            client
+                .schema(topic)
+                .await?
+                .ok_or_else(|| crate::Error::TopicNotFound(topic.to_string()))?,
+        );
+
+        Ok(Self::new_with_schema(client, topic, schema))
+    }
+
+    pub fn rows<R: RowFormat>(self, buffer: usize) -> crate::Result<RowSink<R>> {
         let schema = self.schema.arrow_schema().clone();
         RowSink::try_new(self, schema, buffer)
     }

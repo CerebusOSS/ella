@@ -192,7 +192,7 @@ impl Sink<RecordBatch> for Publisher {
 }
 
 impl Publisher {
-    pub fn rows<R: RowFormat>(self, buffer: usize) -> crate::Result<RowSink<R, Self>> {
+    pub fn rows<R: RowFormat>(self, buffer: usize) -> crate::Result<RowSink<R>> {
         let schema = self.schema.arrow_schema().clone();
         RowSink::try_new(self, schema, buffer)
     }

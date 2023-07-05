@@ -1,27 +1,39 @@
-use std::task::{Context, Poll};
+use std::{
+    fmt::Debug,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use super::{RowBatchBuilder, RowFormat};
 use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
-use futures::Sink;
+use futures::{Sink, SinkExt};
 
-pin_project_lite::pin_project! {
-    #[derive(Debug, Clone)]
-    #[project = RowSinkProj]
-    pub struct RowSink<R: RowFormat, S> {
-        #[pin]
-        inner: S,
-        builder: R::Builder,
-        capacity: usize,
-        schema: SchemaRef,
+pub struct RowSink<R: RowFormat> {
+    inner: Pin<Box<dyn Sink<RecordBatch, Error = crate::Error> + Send + 'static>>,
+    builder: R::Builder,
+    capacity: usize,
+    schema: SchemaRef,
+}
+
+impl<R: RowFormat> Debug for RowSink<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RowSink")
+            .field("builder", &self.builder)
+            .field("capacity", &self.capacity)
+            .field("schema", &self.schema)
+            .finish_non_exhaustive()
     }
 }
 
-impl<R, S> RowSink<R, S>
+impl<R> RowSink<R>
 where
     R: RowFormat,
-    S: Sink<RecordBatch, Error = crate::Error>,
 {
-    pub fn try_new(inner: S, schema: SchemaRef, capacity: usize) -> crate::Result<Self> {
+    pub fn try_new<S>(inner: S, schema: SchemaRef, capacity: usize) -> crate::Result<Self>
+    where
+        S: Sink<RecordBatch, Error = crate::Error> + Send + 'static,
+    {
+        let inner = Box::pin(inner);
         let builder = R::builder(&schema.fields)?;
 
         Ok(Self {
@@ -32,10 +44,6 @@ where
         })
     }
 
-    pub fn into_inner(self) -> S {
-        self.inner
-    }
-
     pub fn len(&self) -> usize {
         self.builder.len()
     }
@@ -44,57 +52,54 @@ where
         self.capacity
     }
 
-    fn maybe_flush(
-        this: &mut RowSinkProj<'_, R, S>,
-        force: bool,
-        cx: &mut Context<'_>,
-    ) -> Poll<crate::Result<()>> {
-        if this.builder.len() >= *this.capacity || !this.builder.is_empty() && force {
-            futures::ready!(this.inner.as_mut().poll_ready(cx))?;
-            let batch = this.builder.build(this.schema.clone())?;
-            Poll::Ready(this.inner.as_mut().start_send(batch))
+    fn maybe_flush(&mut self, force: bool, cx: &mut Context<'_>) -> Poll<crate::Result<()>>
+    where
+        Self: Unpin,
+    {
+        if self.builder.len() >= self.capacity || !self.builder.is_empty() && force {
+            futures::ready!(self.inner.poll_ready_unpin(cx))?;
+            let batch = self.builder.build(self.schema.clone())?;
+            Poll::Ready(self.inner.start_send_unpin(batch))
         } else {
             Poll::Ready(Ok(()))
         }
     }
 }
 
-impl<R, S> Sink<R> for RowSink<R, S>
+impl<R> Sink<R> for RowSink<R>
 where
     R: RowFormat,
-    S: Sink<RecordBatch, Error = crate::Error>,
+    Self: Unpin,
 {
     type Error = crate::Error;
 
     #[inline]
     fn poll_ready(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
-        Self::maybe_flush(&mut self.project(), false, cx)
+        self.maybe_flush(false, cx)
     }
 
     #[inline]
-    fn start_send(self: std::pin::Pin<&mut Self>, item: R) -> Result<(), Self::Error> {
-        self.project().builder.push(item);
+    fn start_send(mut self: std::pin::Pin<&mut Self>, item: R) -> Result<(), Self::Error> {
+        self.builder.push(item);
         Ok(())
     }
 
     fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
-        let mut this = self.project();
-        futures::ready!(Self::maybe_flush(&mut this, true, cx))?;
-        this.inner.poll_flush(cx)
+        futures::ready!(self.maybe_flush(true, cx))?;
+        self.inner.poll_flush_unpin(cx)
     }
 
     fn poll_close(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
-        let mut this = self.project();
-        futures::ready!(Self::maybe_flush(&mut this, true, cx))?;
-        this.inner.poll_close(cx)
+        futures::ready!(self.maybe_flush(true, cx))?;
+        self.inner.poll_close_unpin(cx)
     }
 }

@@ -42,7 +42,7 @@ impl SynapseServer {
         self.stop.notify_one()
     }
 
-    pub async fn stop(mut self) -> crate::Result<()> {
+    pub async fn stop(&mut self) -> crate::Result<()> {
         self.stop.notify_one();
         (&mut self.handle).await.unwrap()
     }

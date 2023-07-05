@@ -43,6 +43,8 @@ pub enum Error {
     ColumnCount(usize, usize),
     #[error("row builder incompatible with field {0:?}")]
     IncompatibleRow(Arc<Field>),
+    #[error("no topic with id '{0}'")]
+    TopicNotFound(String),
     #[error("datafusion error")]
     DataFusion(#[from] datafusion::error::DataFusionError),
     #[error("I/O error")]
@@ -58,6 +60,9 @@ pub enum Error {
     #[cfg(feature = "flight")]
     #[error("arrow flight error")]
     Flight(#[from] arrow_flight::error::FlightError),
+    #[cfg(feature = "flight")]
+    #[error("transport error")]
+    Transport(#[from] tonic::transport::Error),
 }
 
 impl Error {
@@ -146,8 +151,6 @@ impl EngineError {
 #[cfg(feature = "pyo3")]
 #[derive(Debug, thiserror::Error)]
 pub enum PySynapseError {
-    #[error("no topic with id '{0}' (to create the topic pass a schema)")]
-    TopicNotFound(String),
     #[error("expected one of 'ascending' or 'descending' for index, got '{0}'")]
     InvalidIndexMode(String),
 }
@@ -199,4 +202,6 @@ pub enum ClientError {
     MissingTicket,
     #[error("no flight endpoints in server response")]
     MissingEndpoint,
+    #[error("invalid server URI: {0}")]
+    InvalidUri(String),
 }

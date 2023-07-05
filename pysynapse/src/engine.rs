@@ -1,9 +1,6 @@
 use pyo3::prelude::*;
 
-use synapse::{
-    common::error::PySynapseError,
-    engine::{Engine, EngineConfig},
-};
+use synapse::engine::{Engine, EngineConfig};
 
 use crate::{data_types::PySchema, wait_for_future, PyTopic};
 
@@ -50,7 +47,7 @@ impl PyEngine {
             self.engine
                 .topic(&name)
                 .get()
-                .ok_or_else(|| PySynapseError::TopicNotFound(name))?
+                .ok_or_else(|| synapse::Error::TopicNotFound(name))?
         };
         Ok(topic.into())
     }

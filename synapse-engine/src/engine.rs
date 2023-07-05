@@ -200,15 +200,25 @@ pub struct TopicRef<'a> {
 }
 
 impl<'a> TopicRef<'a> {
-    pub async fn get_or_create(self, schema: Schema) -> crate::Result<Arc<Topic>> {
+    pub async fn get_or_create(&self, schema: Schema) -> crate::Result<Arc<Topic>> {
         if let Some(topic) = self.get() {
             Ok(topic)
         } else {
-            self.engine.catalog.create_topic(self.topic, schema).await
+            self.engine
+                .catalog
+                .create_topic(self.topic.clone(), schema)
+                .await
         }
     }
 
     pub fn get(&self) -> Option<Arc<Topic>> {
         self.engine.catalog.topic(self.topic.clone())
+    }
+
+    pub async fn create(&self, schema: Schema) -> crate::Result<Arc<Topic>> {
+        self.engine
+            .catalog
+            .create_topic(self.topic.clone(), schema)
+            .await
     }
 }
