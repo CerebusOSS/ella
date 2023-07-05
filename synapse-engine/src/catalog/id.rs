@@ -18,12 +18,6 @@ use crate::Path;
 #[as_ref(forward)]
 pub struct TopicId(String);
 
-impl TopicId {
-    pub fn to_string(self) -> String {
-        self.0
-    }
-}
-
 macro_rules! impl_uuid_newtype {
     ($([$t:ident $($prefix:literal)?])+) => {
         $(

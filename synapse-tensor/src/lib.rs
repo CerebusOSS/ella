@@ -1,3 +1,6 @@
+// Allow because tensors support negative indexing.
+#![allow(clippy::reversed_empty_ranges)]
+
 pub(crate) mod arrow;
 mod column;
 mod fmt;
