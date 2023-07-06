@@ -158,7 +158,7 @@ impl Engine {
     pub async fn query(&self, sql: &str) -> crate::Result<Lazy> {
         let state = self.ctx.session().state();
         let plan = state.create_logical_plan(sql).await?;
-        Ok(Lazy::new(plan, Box::new(LocalBackend(state))))
+        Ok(Lazy::new(plan, Arc::new(LocalBackend(state))))
     }
 
     pub async fn shutdown(&self) -> crate::Result<()> {

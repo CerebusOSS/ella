@@ -8,7 +8,7 @@ use std::fmt::{Debug, Write};
 use time::format_description::well_known::Rfc3339;
 
 /// A trait for data that can be stored as in a tensor.
-pub trait TensorValue: Debug + Clone + PartialEq + PartialOrd + 'static {
+pub trait TensorValue: Debug + Clone + PartialEq + PartialOrd + Send + Sync + 'static {
     /// Arrow array type used to store raw values.
     type Array: Array + Clone + 'static;
     /// Masked value type. For `Option<T>` this is `Option<T>`.

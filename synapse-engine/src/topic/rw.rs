@@ -303,7 +303,11 @@ impl TableProvider for RwBuffer {
             self.schema().arrow_schema().clone(),
             projection.cloned(),
         )?;
-        if let Some(sort) = self.schema.output_ordering() {
+        if let Some(mut sort) = self.schema.output_ordering() {
+            if let Some(projection) = projection {
+                sort =
+                    crate::util::project_ordering(&self.schema.arrow_schema(), &projection, &sort)?;
+            }
             table = table.with_sort_information(sort);
         }
         Ok(Arc::new(table))

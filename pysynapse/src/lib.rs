@@ -1,13 +1,17 @@
 mod data_types;
+mod dataframe;
 mod engine;
+mod lazy;
+mod synapse;
 mod topic;
 
 use futures::Future;
 use once_cell::sync::OnceCell;
 use pyo3::prelude::*;
 
-pub use engine::{PyEngine, PyEngineConfig};
-pub use synapse;
+pub use self::synapse::{connect, start, PySynapse};
+pub use ::synapse::{Error, Result};
+pub use engine::PyEngineConfig;
 pub use topic::{PyPublisher, PyTopic};
 
 #[cfg(feature = "mimalloc")]
@@ -17,12 +21,13 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[pymodule]
 #[pyo3(name = "_internal")]
 fn pysynapse(py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<PyEngine>()?;
     m.add_class::<PyEngineConfig>()?;
     m.add_class::<PyTopic>()?;
     m.add_class::<PyPublisher>()?;
+    m.add_class::<PySynapse>()?;
 
-    m.add_function(wrap_pyfunction!(engine::runtime, m)?)?;
+    m.add_function(wrap_pyfunction!(start, m)?)?;
+    m.add_function(wrap_pyfunction!(connect, m)?)?;
 
     data_types::add_module(py, m)?;
     Ok(())

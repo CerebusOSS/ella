@@ -3,6 +3,10 @@ pub mod work_queue;
 
 use std::{collections::HashSet, sync::Arc};
 
+use arrow_schema::Schema;
+use datafusion::{
+    error::DataFusionError, physical_expr::PhysicalSortExpr, physical_plan::expressions::Column,
+};
 use futures::TryStreamExt;
 use synapse_common::Duration;
 use tokio::{
@@ -129,4 +133,27 @@ impl MaintenanceWorker {
         }
         Ok(())
     }
+}
+
+pub(crate) fn project_ordering(
+    schema: &Schema,
+    projection: &[usize],
+    ordering: &[PhysicalSortExpr],
+) -> Result<Vec<PhysicalSortExpr>, DataFusionError> {
+    let projected = schema.project(&projection)?;
+    let mut out = Vec::with_capacity(ordering.len());
+    for PhysicalSortExpr { expr, options } in ordering {
+        if let Some(col) = expr.as_any().downcast_ref::<Column>() {
+            let name = col.name();
+            if let Some((idx, _)) = projected.column_with_name(name) {
+                out.push(PhysicalSortExpr {
+                    expr: Arc::new(Column::new(name, idx)),
+                    options: *options,
+                });
+                continue;
+            }
+        }
+        break;
+    }
+    Ok(out)
 }

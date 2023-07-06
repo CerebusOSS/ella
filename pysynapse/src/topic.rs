@@ -1,15 +1,14 @@
 use arrow::{pyarrow::FromPyArrow, record_batch::RecordBatch};
 use futures::{FutureExt, SinkExt};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use std::sync::Arc;
-use synapse::engine::{topic::Publisher, Topic};
+use synapse::topic::{Publisher, Topic};
 
 use crate::wait_for_future;
 
-#[derive(Clone, derive_more::From, derive_more::Into)]
+#[derive(derive_more::From, derive_more::Into)]
 #[pyclass(name = "Topic")]
 pub struct PyTopic {
-    topic: Arc<Topic>,
+    topic: Topic,
 }
 
 #[pymethods]
@@ -19,14 +18,9 @@ impl PyTopic {
             inner: self.topic.publish(),
         }
     }
-
-    fn close(&self, py: Python) -> synapse::Result<()> {
-        wait_for_future(py, self.topic.close())?;
-        Ok(())
-    }
 }
 
-#[derive(Clone, derive_more::From, derive_more::Into)]
+#[derive(derive_more::From, derive_more::Into)]
 #[pyclass(name = "Publisher")]
 pub struct PyPublisher {
     inner: Publisher,

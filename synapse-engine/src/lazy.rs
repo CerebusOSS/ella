@@ -1,4 +1,4 @@
-use std::{fmt::Debug, pin::Pin, task::Poll};
+use std::{fmt::Debug, pin::Pin, sync::Arc, task::Poll};
 
 use datafusion::{
     arrow::{compute::concat_batches, record_batch::RecordBatch},
@@ -13,11 +13,11 @@ use synapse_tensor::DataFrame;
 #[async_trait::async_trait]
 pub trait LazyBackend: Debug + Send + Sync {
     async fn stream(
-        &mut self,
+        &self,
         plan: &LogicalPlan,
     ) -> crate::Result<BoxStream<'static, crate::Result<RecordBatch>>>;
 
-    async fn execute(&mut self, plan: &LogicalPlan) -> crate::Result<DataFrame> {
+    async fn execute(&self, plan: &LogicalPlan) -> crate::Result<DataFrame> {
         let schema = (**plan.schema()).clone().into();
         let batches = self.stream(plan).await?.try_collect::<Vec<_>>().await?;
 
@@ -31,7 +31,7 @@ pub(crate) struct LocalBackend(pub(crate) SessionState);
 #[async_trait::async_trait]
 impl LazyBackend for LocalBackend {
     async fn stream(
-        &mut self,
+        &self,
         plan: &LogicalPlan,
     ) -> crate::Result<BoxStream<'static, crate::Result<RecordBatch>>> {
         let plan = self.0.create_physical_plan(plan).await?;
@@ -41,22 +41,22 @@ impl LazyBackend for LocalBackend {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Lazy {
     plan: LogicalPlan,
-    backend: Box<dyn LazyBackend + 'static>,
+    backend: Arc<dyn LazyBackend + 'static>,
 }
 
 impl Lazy {
-    pub fn new(plan: LogicalPlan, backend: Box<dyn LazyBackend + 'static>) -> Self {
+    pub fn new(plan: LogicalPlan, backend: Arc<dyn LazyBackend + 'static>) -> Self {
         Self { plan, backend }
     }
 
-    pub async fn execute(mut self) -> crate::Result<DataFrame> {
+    pub async fn execute(self) -> crate::Result<DataFrame> {
         self.backend.execute(&self.plan).await
     }
 
-    pub async fn stream(mut self) -> crate::Result<LazyStream> {
+    pub async fn stream(self) -> crate::Result<LazyStream> {
         Ok(LazyStream(self.backend.stream(&self.plan).await?))
     }
 

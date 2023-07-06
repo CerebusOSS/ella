@@ -121,7 +121,7 @@ impl SynapseClient {
             }
         };
         let plan = logical_plan_from_bytes_with_extension_codec(&raw_plan, &self.ctx, &self.codec)?;
-        Ok(Lazy::new(plan, Box::new(RemoteBackend(self.clone()))))
+        Ok(Lazy::new(plan, Arc::new(RemoteBackend(self.clone()))))
     }
 }
 
@@ -163,13 +163,13 @@ impl Stream for FlightStream {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct RemoteBackend(SynapseClient);
 
 #[tonic::async_trait]
 impl LazyBackend for RemoteBackend {
     async fn stream(
-        &mut self,
+        &self,
         plan: &LogicalPlan,
     ) -> crate::Result<BoxStream<'static, crate::Result<RecordBatch>>> {
         let statement_handle = logical_plan_to_bytes_with_extension_codec(plan, &self.0.codec)?;
@@ -182,6 +182,7 @@ impl LazyBackend for RemoteBackend {
         let stream = self
             .0
             .flight
+            .clone()
             .do_get(ticket)
             .await?
             .map_err(FlightError::from);

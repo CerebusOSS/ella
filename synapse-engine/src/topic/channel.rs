@@ -386,7 +386,14 @@ impl ChannelExec {
         limit: Option<usize>,
     ) -> Result<Self> {
         let projected_schema = project_schema(schema.arrow_schema(), projection.as_ref())?;
-        let order = schema.output_ordering();
+        let mut order = schema.output_ordering();
+        if let Some((sort, project)) = order.as_deref().zip(projection.as_deref()) {
+            order = Some(crate::util::project_ordering(
+                &schema.arrow_schema(),
+                project,
+                sort,
+            )?);
+        }
         Ok(Self {
             src,
             schema,

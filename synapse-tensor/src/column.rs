@@ -73,7 +73,7 @@ impl Column {
     }
 }
 
-pub trait ColumnData: Debug {
+pub trait ColumnData: Debug + Send + Sync {
     fn tensor_type(&self) -> TensorType;
     fn shape(&self) -> Dyn;
     fn strides(&self) -> Dyn;
