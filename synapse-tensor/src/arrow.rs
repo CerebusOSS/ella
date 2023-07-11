@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use arrow::datatypes::{DataType, Field};
+
 use crate::Dyn;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -64,5 +66,23 @@ impl ExtensionType {
         } else {
             Ok(None)
         }
+    }
+}
+
+pub fn row_shape(f: &Field) -> crate::Result<Dyn> {
+    match f.data_type() {
+        DataType::FixedSizeList(_, row_size) => {
+            if let Some(ExtensionType::FixedShapeTensor(tensor)) =
+                ExtensionType::decode(f.metadata())?
+            {
+                if tensor.permutation.is_some() {
+                    unimplemented!();
+                }
+                Ok(tensor.row_shape)
+            } else {
+                Ok(Dyn::from([*row_size as usize]))
+            }
+        }
+        _ => Ok(Dyn::from([])),
     }
 }

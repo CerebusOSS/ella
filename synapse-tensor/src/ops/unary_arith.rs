@@ -16,10 +16,9 @@ macro_rules! impl_unary_ops {
 
 impl<T, S> Tensor<T, S>
 where
-    T: TensorUnaryOp,
+    T: TensorUnaryOp<Output<<T as TensorValue>::Unmasked> = T>,
     S: Shape,
     T::Unmasked: Float,
-    T::Output<T::Unmasked>: TensorValue,
 {
     impl_unary_ops!(
         [sin   Float::sin]
@@ -38,10 +37,9 @@ where
 
 impl<T, S> Tensor<T, S>
 where
-    T: TensorUnaryOp,
+    T: TensorUnaryOp<Output<<T as TensorValue>::Unmasked> = T>,
     S: Shape,
     T::Unmasked: Signed,
-    T::Output<T::Unmasked>: TensorValue,
 {
     pub fn abs(&self) -> Tensor<T::Output<T::Unmasked>, S> {
         unary_op(self, |x| x.apply(|x| x.abs()))

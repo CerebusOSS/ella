@@ -58,4 +58,12 @@ where
         let values = self.values().clone().with_mask(Some(mask.into_values()));
         Tensor::new(values.cast(), self.shape().clone(), self.strides().clone())
     }
+
+    pub fn nullable(&self) -> Tensor<T::Masked, S> {
+        Tensor::new(
+            self.values().clone().cast(),
+            self.shape().clone(),
+            self.strides().clone(),
+        )
+    }
 }

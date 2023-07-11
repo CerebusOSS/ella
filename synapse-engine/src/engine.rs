@@ -4,7 +4,10 @@ use std::{
     sync::Arc,
 };
 
-use datafusion::prelude::{SessionConfig, SessionContext};
+use datafusion::{
+    execution::{context::SessionState, runtime_env::RuntimeEnv},
+    prelude::{SessionConfig, SessionContext},
+};
 use synapse_common::Duration;
 
 use crate::{
@@ -100,8 +103,9 @@ impl Engine {
             // TODO: support batches
             .with_coalesce_batches(false);
 
-        let session = SessionContext::with_config(df_cfg);
-        let env = session.runtime_env();
+        let env = Arc::new(RuntimeEnv::default());
+        let state = SessionState::with_config_rt(df_cfg, env.clone());
+        let session = SessionContext::with_state(state);
         let ctx = Arc::new(SynapseContext::new(root, session, config.clone(), &env)?);
         let catalog = Catalog::open(ctx.clone()).await?;
         ctx.session()

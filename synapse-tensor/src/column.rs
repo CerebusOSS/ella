@@ -1,84 +1,67 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, ops::Deref, sync::Arc};
 
 use arrow::{
-    array::{make_array, Array, ArrayData, ArrayRef, AsArray, FixedSizeListArray},
+    array::{Array, ArrayData, ArrayRef},
     datatypes::{DataType, Field},
 };
 
 use crate::{arrow::ExtensionType, Axis, Dyn, RemoveAxis, Shape, Tensor, TensorType, TensorValue};
 use synapse_common::{Duration, Time};
 
+pub type ColumnRef = Arc<dyn Column + 'static>;
+
 #[derive(Debug, Clone)]
-pub struct Column {
+pub struct NamedColumn {
     name: String,
-    data: Arc<dyn ColumnData + 'static>,
+    col: ColumnRef,
 }
 
-impl Column {
-    pub fn new<S, T>(name: S, data: T) -> Self
-    where
-        S: Into<String>,
-        T: ColumnData + 'static,
-    {
-        let name = name.into();
-        let data = Arc::new(data);
-        Self { name, data }
+impl NamedColumn {
+    pub fn new(name: String, col: ColumnRef) -> Self {
+        Self { name, col }
     }
 
-    #[inline]
-    pub fn name(&self) -> &String {
+    pub fn name(&self) -> &str {
         &self.name
     }
 
-    #[inline]
-    pub fn shape(&self) -> Dyn {
-        self.data.shape()
-    }
-
-    #[inline]
-    pub fn strides(&self) -> Dyn {
-        self.data.strides()
-    }
-
-    #[inline]
-    pub fn dtype(&self) -> TensorType {
-        self.data.tensor_type()
-    }
-
-    #[inline]
-    pub fn nullable(&self) -> bool {
-        self.data.nullable()
-    }
-
-    #[inline]
-    pub fn typed<T: TensorValue, S: Shape>(&self) -> crate::Result<Tensor<T, S>> {
-        column_to_tensor(self)
-    }
-
-    pub fn with_name<S>(mut self, name: S) -> Self
-    where
-        S: Into<String>,
-    {
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.name = name.into();
         self
     }
 
-    #[inline]
-    pub fn to_arrow(&self) -> ArrayRef {
-        column_to_array(self)
-    }
-
-    fn arrow_type(&self) -> DataType {
-        self.data.arrow_type()
+    pub fn into_inner(self) -> ColumnRef {
+        self.col
     }
 }
 
-pub trait ColumnData: Debug + Send + Sync {
+impl Deref for NamedColumn {
+    type Target = ColumnRef;
+
+    fn deref(&self) -> &Self::Target {
+        &self.col
+    }
+}
+
+impl From<(String, ColumnRef)> for NamedColumn {
+    fn from((name, col): (String, ColumnRef)) -> Self {
+        NamedColumn::new(name, col)
+    }
+}
+
+impl From<NamedColumn> for (String, ColumnRef) {
+    fn from(NamedColumn { name, col }: NamedColumn) -> Self {
+        (name, col)
+    }
+}
+
+pub trait Column: Debug + Send + Sync {
     fn tensor_type(&self) -> TensorType;
     fn shape(&self) -> Dyn;
     fn strides(&self) -> Dyn;
     fn nullable(&self) -> bool;
-    fn data(&self) -> ArrayRef;
+    fn data(&self) -> ArrayData;
+    fn to_arrow(&self) -> ArrayRef;
 
     fn arrow_type(&self) -> DataType {
         let row_shape = if self.shape().ndim() > 1 {
@@ -99,9 +82,18 @@ pub trait ColumnData: Debug + Send + Sync {
             dtype.to_arrow()
         }
     }
+
+    fn row_shape(&self) -> Option<Dyn> {
+        let shape = self.shape();
+        if shape.ndim() > 0 {
+            Some(shape.remove_axis(Axis(0)))
+        } else {
+            None
+        }
+    }
 }
 
-impl<T, S> ColumnData for Tensor<T, S>
+impl<T, S> Column for Tensor<T, S>
 where
     T: TensorValue,
     S: Shape,
@@ -122,8 +114,12 @@ where
         T::NULLABLE
     }
 
-    fn data(&self) -> ArrayRef {
-        self.values().clone().into_values()
+    fn to_arrow(&self) -> ArrayRef {
+        self.clone().into_arrow()
+    }
+
+    fn data(&self) -> ArrayData {
+        self.values().values().to_data()
     }
 }
 
@@ -147,101 +143,58 @@ pub fn tensor_schema(
     }
 }
 
-fn column_to_tensor<T, S>(col: &Column) -> crate::Result<Tensor<T, S>>
-where
-    T: TensorValue,
-    S: Shape,
-{
-    let shape = S::from_shape(&col.shape())?;
-    let strides = S::from_shape(&col.strides())?;
-    if T::TENSOR_TYPE == col.dtype() {
-        Ok(Tensor::new(
-            T::from_array_data(col.data.data().to_data()),
-            shape,
-            strides,
-        ))
-    } else {
-        Err(crate::Error::cast(col.dtype(), T::TENSOR_TYPE))
-    }
-}
-
-pub(crate) fn column_to_field(col: &Column) -> Field {
-    Field::new(col.name(), col.arrow_type(), col.nullable())
-}
-
-pub(crate) fn column_to_array(col: &Column) -> ArrayRef {
-    let field = column_to_field(col);
-
-    if !col.shape().is_standard_layout(&col.strides()) {
-        todo!()
-    }
-
-    if col.shape().ndim() > 1 {
-        let data = unsafe {
-            ArrayData::builder(field.data_type().clone())
-                .add_child_data(col.data.data().to_data())
-                .len(col.shape()[0])
-                .build_unchecked()
-        };
-        Arc::new(FixedSizeListArray::from(data))
-    } else {
-        let data = unsafe {
-            col.data
-                .data()
-                .to_data()
-                .into_builder()
-                .data_type(field.data_type().to_owned())
-                .build_unchecked()
-        };
-        make_array(data)
-    }
-}
-
-pub(crate) fn array_to_column(field: &Field, array: &ArrayRef) -> crate::Result<Column> {
+pub(crate) fn array_to_column(field: &Field, array: ArrayRef) -> crate::Result<ColumnRef> {
     match field.data_type() {
         DataType::FixedSizeList(inner, row_size) => {
             let dtype = TensorType::from_arrow(inner.data_type())?;
-            let shape = if let Some(ExtensionType::FixedShapeTensor(tensor)) =
+            let row_shape = if let Some(ExtensionType::FixedShapeTensor(tensor)) =
                 ExtensionType::decode(field.metadata())?
             {
                 if tensor.permutation.is_some() {
                     unimplemented!();
                 }
-                let mut shape = tensor.row_shape.insert_axis(Axis(0));
-                shape[0] = array.len();
-                shape
+                tensor.row_shape.clone()
             } else {
-                Dyn::from([array.len(), *row_size as usize])
+                Dyn::from([*row_size as usize])
             };
-            let array = array
-                .as_any()
-                .downcast_ref::<FixedSizeListArray>()
-                .expect("expected fixed-size list array")
-                .values();
-            Ok(make_column(field.name().clone(), dtype, shape, array))
+            make_column(dtype, row_shape, array)
         }
         dtype => {
             let dtype = TensorType::from_arrow(dtype)?;
-            let shape = Dyn::from([array.len()]);
-            Ok(make_column(field.name().clone(), dtype, shape, array))
+            make_column(dtype, Dyn::from([]), array)
         }
+    }
+}
+
+pub fn cast<T, S>(col: &ColumnRef) -> crate::Result<Tensor<T, S>>
+where
+    T: TensorValue,
+    S: Shape,
+{
+    if T::TENSOR_TYPE.to_arrow() == col.tensor_type().to_arrow() {
+        Ok(Tensor::new(
+            T::from_array_data(col.data()),
+            S::from_shape(&col.shape())?,
+            S::from_shape(&col.strides())?,
+        ))
+    } else {
+        Err(crate::Error::Cast {
+            to: T::TENSOR_TYPE,
+            from: col.tensor_type(),
+        })
     }
 }
 
 macro_rules! impl_make_column {
     ($([$t:ident $tensor_type:tt $arrow_type:tt])+) => {
-        fn make_column(name: String, dtype: TensorType, shape: Dyn, array: &ArrayRef) -> Column {
-            use ::arrow::datatypes::*;
-
-            let strides = shape.default_strides();
-
-            match dtype {
-                TensorType::Bool => Column::new(name, Tensor::<bool, Dyn>::new(array.as_boolean().clone(), shape, strides)),
-                TensorType::String => Column::new(name, Tensor::<String, Dyn>::new(array.as_string().clone(), shape, strides)),
+        fn make_column(dtype: TensorType, row_shape: Dyn, array: ArrayRef) -> crate::Result<ColumnRef> {
+            Ok(match dtype {
+                TensorType::Bool => Arc::new(Tensor::<bool, Dyn>::try_from_arrow(array, row_shape)?),
+                TensorType::String => Arc::new(Tensor::<String, Dyn>::try_from_arrow(array, row_shape)?),
                 $(
-                    TensorType::$tensor_type => Column::new(name, Tensor::<$t, Dyn>::new(array.as_primitive::<$arrow_type>().clone(), shape, strides)),
+                    TensorType::$tensor_type => Arc::new(Tensor::<$t, Dyn>::try_from_arrow(array, row_shape)?),
                 )+
-            }
+            })
         }
     };
 }

@@ -77,6 +77,10 @@ where
         self.shrink_to_fit().values
     }
 
+    pub fn values(&self) -> Arc<T::Array> {
+        self.clone().shrink_to_fit().values
+    }
+
     pub fn mask(&self) -> MaskData {
         MaskData::new(self.values.nulls().cloned(), self.offset, self.len())
     }

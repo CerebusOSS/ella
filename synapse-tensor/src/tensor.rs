@@ -2,11 +2,15 @@ mod data;
 mod fmt;
 mod iter;
 
+use std::sync::Arc;
+
+use arrow::array::{make_array, Array, ArrayData, ArrayRef, FixedSizeListArray};
 pub use data::TensorData;
 pub(crate) use iter::ShapedIter;
 pub use iter::TensorIter;
+use synapse_common::array::flatten;
 
-use crate::{Const, Dyn, Mask, Shape, TensorValue};
+use crate::{Column, Const, Dyn, Mask, Shape, TensorValue};
 
 pub type Tensor1<T> = Tensor<T, Const<1>>;
 pub type Tensor2<T> = Tensor<T, Const<2>>;
@@ -70,6 +74,51 @@ where
             values: values.into(),
             shape,
             strides,
+        }
+    }
+
+    pub fn try_from_arrow<R>(array: ArrayRef, row_shape: R) -> crate::Result<Self>
+    where
+        R: Shape<Larger = S>,
+    {
+        let mut shape = row_shape.insert_axis(crate::Axis(0));
+        shape[0] = array.len();
+        let array = flatten(array)?;
+        if shape.size() != array.len() {
+            return Err(crate::ShapeError::ArraySize(array.len(), shape.slice().to_vec()).into());
+        }
+        if array.data_type() != &T::TENSOR_TYPE.to_arrow() {
+            return Err(crate::Error::DataType(array.data_type().clone()));
+        }
+        let strides = shape.default_strides();
+        Ok(Self::new(
+            T::from_array_data(array.to_data()),
+            shape,
+            strides,
+        ))
+    }
+
+    pub fn into_arrow(self) -> ArrayRef {
+        let this = self.to_standard_layout();
+        let dtype = this.arrow_type();
+        if this.shape().ndim() > 1 {
+            let data = unsafe {
+                ArrayData::builder(dtype)
+                    .add_child_data(this.values.into_values().to_data())
+                    .len(this.shape[0])
+                    .build_unchecked()
+            };
+            Arc::new(FixedSizeListArray::from(data))
+        } else {
+            let data = unsafe {
+                this.values
+                    .into_values()
+                    .to_data()
+                    .into_builder()
+                    .data_type(dtype)
+                    .build_unchecked()
+            };
+            make_array(data)
         }
     }
 

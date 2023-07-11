@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use crate::{
-    arrow::ExtensionType, column::array_to_column, Axis, Column, Dyn, Shape, Tensor, TensorValue,
-};
+use crate::{arrow::ExtensionType, Axis, Dyn, Shape, Tensor, TensorValue};
 
 use arrow::datatypes::{DataType, Field};
 use synapse_common::{
@@ -66,7 +64,8 @@ where
             return Err(crate::Error::ColumnCount(1, fields.len()));
         }
         debug_assert_eq!(arrays.len(), 1);
-        let values: Tensor<T, S::Larger> = array_to_column(&fields[0], &arrays[0])?.typed()?;
+        let row_shape = <S as Shape>::from_shape(&crate::arrow::row_shape(&fields[0])?)?;
+        let values = Tensor::<T, S::Larger>::try_from_arrow(arrays[0].clone(), row_shape)?;
         debug_assert_eq!(rows, values.shape()[0]);
 
         Ok(TensorRowView(values))
@@ -106,7 +105,7 @@ where
 
     fn build_columns(&mut self) -> crate::Result<Vec<arrow::array::ArrayRef>> {
         let values = Tensor::stack(Axis(0), &std::mem::take(&mut self.values))?;
-        Ok(vec![Column::new(String::new(), values).to_arrow()])
+        Ok(vec![values.into_arrow()])
     }
 }
 

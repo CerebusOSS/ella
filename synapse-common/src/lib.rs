@@ -1,3 +1,4 @@
+pub mod array;
 pub mod error;
 pub mod ops;
 #[cfg(feature = "pyo3")]

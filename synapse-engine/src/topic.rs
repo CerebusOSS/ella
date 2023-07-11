@@ -19,7 +19,8 @@ use datafusion::{
     execution::context::SessionState,
     logical_expr::{LogicalPlanBuilder, TableProviderFilterPushDown, TableType, UNNAMED_TABLE},
     physical_plan::{
-        insert::InsertExec, ExecutionPlan, Partitioning, RecordBatchStream, Statistics,
+        insert::InsertExec, DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning,
+        RecordBatchStream, Statistics,
     },
     prelude::Expr,
 };
@@ -277,12 +278,18 @@ impl ExecutionPlan for TopicExec {
         Statistics::default()
     }
 
-    fn fmt_as(
-        &self,
-        _t: datafusion::physical_plan::DisplayFormatType,
-        f: &mut std::fmt::Formatter,
-    ) -> std::fmt::Result {
+    fn fmt_as(&self, _t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "TopicExec: topic={}", self.topic)
+    }
+}
+
+impl DisplayAs for TopicExec {
+    fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match t {
+            DisplayFormatType::Default | DisplayFormatType::Verbose => {
+                write!(f, "TopicExec: topic={}", self.topic)
+            }
+        }
     }
 }
 

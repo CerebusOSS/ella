@@ -1,7 +1,7 @@
 // Allow because tensors support negative indexing.
 #![allow(clippy::reversed_empty_ranges)]
 
-pub(crate) mod arrow;
+pub mod arrow;
 mod column;
 mod fmt;
 mod frame;
@@ -12,7 +12,7 @@ pub mod shape;
 pub mod slice;
 mod tensor;
 
-pub use column::{tensor_schema, Column, ColumnData};
+pub use column::{tensor_schema, Column, ColumnRef, NamedColumn};
 pub use frame::{DataFrame, Frame};
 pub use mask::Mask;
 pub use shape::{Axis, Const, Dyn, IntoShape, RemoveAxis, Shape};

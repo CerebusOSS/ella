@@ -466,6 +466,21 @@ impl ExecutionPlan for ChannelExec {
     }
 }
 
+impl DisplayAs for ChannelExec {
+    fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match t {
+            DisplayFormatType::Default | DisplayFormatType::Verbose => {
+                let publishers = self.src.active.load(Ordering::Relaxed);
+                write!(f, "ChannelExec: publishers={}", publishers)?;
+                if let Some(limit) = self.limit {
+                    write!(f, ", limit={}", limit)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 struct ChannelStream {
     inner: Subscriber,

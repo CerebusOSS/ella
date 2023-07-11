@@ -45,6 +45,8 @@ pub enum Error {
     IncompatibleRow(Arc<Field>),
     #[error("no topic with id '{0}'")]
     TopicNotFound(String),
+    #[error("not implemented: {0}")]
+    Unimplemented(String),
     #[error("datafusion error")]
     DataFusion(#[from] datafusion::error::DataFusionError),
     #[error("I/O error")]
@@ -92,6 +94,8 @@ pub enum ShapeError {
     Incompatible(Vec<usize>),
     #[error("shapes {0:?} and {1:?} cannot be broadcast together")]
     Broadcast(Vec<usize>, Vec<usize>),
+    #[error("array with {0} elements is incompatible with shape {1:?}")]
+    ArraySize(usize, Vec<usize>),
 }
 
 impl ShapeError {

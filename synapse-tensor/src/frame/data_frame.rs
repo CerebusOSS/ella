@@ -3,14 +3,14 @@ use std::{ops::Deref, sync::Arc};
 use arrow::record_batch::RecordBatch;
 use synapse_common::row::RowFormat;
 
-use crate::{Column, Shape, Tensor, TensorValue};
+use crate::{NamedColumn, Shape, Tensor, TensorValue};
 
 use super::{batch_to_columns, frame_to_batch, Frame};
 
 #[derive(Debug, Clone)]
 pub struct DataFrame {
     rows: usize,
-    columns: Arc<[Column]>,
+    columns: Arc<[NamedColumn]>,
 }
 
 impl DataFrame {
@@ -25,7 +25,7 @@ impl DataFrame {
     {
         for col in self.columns.deref() {
             if name == col.name() {
-                return col.typed();
+                return crate::column::cast(col.deref());
             }
         }
         Err(crate::Error::ColumnLookup(name.to_string()))
@@ -36,7 +36,7 @@ impl DataFrame {
         T: TensorValue,
         S: Shape,
     {
-        self.columns[col].typed()
+        crate::column::cast(self.columns[col].deref())
     }
 
     pub fn rows<R: RowFormat>(&self) -> crate::Result<R::View> {
@@ -50,7 +50,7 @@ impl Frame for DataFrame {
         self.columns.len()
     }
 
-    fn column(&self, i: usize) -> &Column {
+    fn column(&self, i: usize) -> &NamedColumn {
         &self.columns[i]
     }
 }
@@ -87,9 +87,9 @@ impl TryFrom<RecordBatch> for DataFrame {
     }
 }
 
-impl FromIterator<Column> for DataFrame {
-    fn from_iter<T: IntoIterator<Item = Column>>(iter: T) -> Self {
-        let columns: Arc<[Column]> = iter.into_iter().collect::<Vec<_>>().into();
+impl FromIterator<NamedColumn> for DataFrame {
+    fn from_iter<T: IntoIterator<Item = NamedColumn>>(iter: T) -> Self {
+        let columns: Arc<[NamedColumn]> = iter.into_iter().collect::<Vec<_>>().into();
         let rows = columns.first().map_or(0, |c| c.shape()[0]);
         Self { columns, rows }
     }
