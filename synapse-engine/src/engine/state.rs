@@ -11,13 +11,13 @@ use crate::{
     cluster::SynapseCluster,
     codec::SynapseExtensionCodec,
     config::SynapseConfig,
-    lazy::LocalBackend,
+    lazy::{Lazy, LocalBackend},
     registry::{Id, TableId, TableRef, TransactionLog},
     table::{
         info::{TableInfo, TopicInfo, ViewInfo},
         SynapseTable, SynapseTopic, SynapseView,
     },
-    Path,
+    Path, Plan,
 };
 
 #[derive(Clone)]
@@ -143,6 +143,11 @@ impl SynapseState {
             .await?;
 
         Ok(())
+    }
+
+    pub async fn query(&self, sql: impl AsRef<str>) -> crate::Result<Lazy> {
+        let plan = self.session.create_logical_plan(sql.as_ref()).await?;
+        Ok(Lazy::new(Plan::from_plan(plan), Arc::new(self.backend())))
     }
 
     pub async fn create_topic(

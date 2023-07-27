@@ -22,7 +22,6 @@ use arrow_flight::{
 use datafusion::datasource::TableProvider;
 use datafusion::sql::parser::Statement;
 use datafusion::sql::sqlparser::ast::{self, SetExpr};
-use datafusion_proto::bytes::logical_plan_to_bytes_with_extension_codec;
 use futures::{SinkExt, Stream, TryStreamExt};
 use once_cell::sync::Lazy;
 use prost::Message;
@@ -122,16 +121,8 @@ impl FlightSqlService for SynapseSqlService {
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
         let state = connection(&request)?.read();
-        let codec = state.codec();
-        let state = state.session();
-        let mut plan = state
-            .create_logical_plan(&query.query)
-            .await
-            .map_err(crate::Error::from)?;
-        plan = state.optimize(&plan).map_err(crate::Error::from)?;
-
-        let statement_handle = logical_plan_to_bytes_with_extension_codec(&plan, &codec)
-            .map_err(crate::Error::from)?;
+        let plan = state.query(&query.query).await?;
+        let statement_handle = plan.plan().to_bytes().into();
 
         let ticket = TicketStatementQuery { statement_handle };
         let endpoint = FlightEndpoint {
@@ -142,7 +133,7 @@ impl FlightSqlService for SynapseSqlService {
         };
 
         let info = FlightInfo::new()
-            .try_with_schema(&(&**plan.schema()).into())
+            .try_with_schema(&plan.plan().arrow_schema())
             .map_err(crate::Error::from)?
             .with_endpoint(endpoint)
             .with_ordered(true)

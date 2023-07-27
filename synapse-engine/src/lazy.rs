@@ -79,6 +79,10 @@ impl Lazy {
         let table: TableRef<'static> = table.into().into_owned();
         LazyToView::new(self, table)
     }
+
+    pub fn plan(&self) -> &Plan {
+        &self.plan
+    }
 }
 
 pub struct LazyStream(SendableRecordBatchStream);

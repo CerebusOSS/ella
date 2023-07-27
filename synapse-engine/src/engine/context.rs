@@ -12,7 +12,6 @@ use crate::{
         info::{TableInfo, TopicInfo, ViewInfo},
         SynapseTable, SynapseTopic, SynapseView,
     },
-    Plan,
 };
 
 use super::Engine;
@@ -64,12 +63,8 @@ impl SynapseContext {
         self
     }
 
-    pub async fn query(&self, sql: &str) -> crate::Result<Lazy> {
-        let plan = self.state.session().create_logical_plan(sql).await?;
-        Ok(Lazy::new(
-            Plan::from_plan(plan),
-            Arc::new(self.state.backend()),
-        ))
+    pub async fn query(&self, sql: impl AsRef<str>) -> crate::Result<Lazy> {
+        self.state.query(sql).await
     }
 
     pub async fn execute(&self, sql: &str) -> crate::Result<()> {

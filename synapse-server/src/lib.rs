@@ -10,6 +10,7 @@ pub use synapse_common::{
     Error, Result,
 };
 
+#[allow(non_snake_case)]
 pub(crate) mod gen {
     tonic::include_proto!("synapse.engine");
 }
