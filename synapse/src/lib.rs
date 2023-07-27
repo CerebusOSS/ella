@@ -1,3 +1,5 @@
+mod catalog;
+mod schema;
 mod synapse;
 pub mod table;
 

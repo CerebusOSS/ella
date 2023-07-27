@@ -1,5 +1,8 @@
 use crate::gen::{self, engine_service_server::EngineService};
-use synapse_engine::{registry::TableRef, SynapseConfig};
+use synapse_engine::{
+    registry::{SchemaRef, TableRef},
+    SynapseConfig,
+};
 use tonic::{Request, Response};
 
 use super::auth::connection;
@@ -104,5 +107,36 @@ impl EngineService for SynapseEngineService {
                 )))
             }
         }
+    }
+
+    async fn create_catalog(
+        &self,
+        request: Request<gen::CreateCatalogReq>,
+    ) -> tonic::Result<Response<gen::CatalogId>> {
+        let state = connection(&request)?.read();
+        let req = request.into_inner();
+        let catalog = state.create_catalog(req.catalog, req.if_not_exists).await?;
+
+        Ok(Response::new(gen::CatalogId {
+            catalog: catalog.id().to_string(),
+        }))
+    }
+
+    async fn create_schema(
+        &self,
+        request: Request<gen::CreateSchemaReq>,
+    ) -> tonic::Result<Response<gen::SchemaId>> {
+        let state = connection(&request)?.read();
+        let req = request.into_inner();
+        let schema = SchemaRef {
+            catalog: req.catalog.map(Into::into),
+            schema: req.schema.into(),
+        };
+        let schema = state.create_schema(schema, req.if_not_exists).await?;
+
+        Ok(Response::new(gen::SchemaId {
+            catalog: schema.id().catalog.to_string(),
+            schema: schema.id().schema.to_string(),
+        }))
     }
 }

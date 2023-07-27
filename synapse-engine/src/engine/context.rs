@@ -3,11 +3,13 @@ use std::{fmt::Debug, ops::DerefMut, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::{
+    catalog::SynapseCatalog,
     cluster::SynapseCluster,
     config::SynapseConfig,
     engine::SynapseState,
     lazy::Lazy,
-    registry::{Id, TableRef},
+    registry::{Id, SchemaRef, TableRef},
+    schema::SynapseSchema,
     table::{
         info::{TableInfo, TopicInfo, ViewInfo},
         SynapseTable, SynapseTopic, SynapseView,
@@ -37,8 +39,13 @@ impl SynapseContext {
         Ok(Self { state, engine })
     }
 
-    pub fn use_catalog<'a>(mut self, catalog: impl Into<Id<'a>>) -> Self {
+    pub fn use_catalog<'a>(mut self, catalog: impl Into<Id<'a>>) -> crate::Result<Self> {
         let catalog: Id<'static> = catalog.into().into_owned();
+
+        self.cluster()
+            .catalog(catalog.as_ref())
+            .ok_or_else(|| crate::EngineError::CatalogNotFound(catalog.to_string()))?;
+
         let config = self
             .state
             .config()
@@ -47,11 +54,18 @@ impl SynapseContext {
             .default_catalog(catalog)
             .build();
         self.state.with_config(config);
-        self
+        Ok(self)
     }
 
-    pub fn use_schema<'a>(mut self, schema: impl Into<Id<'a>>) -> Self {
+    pub fn use_schema<'a>(mut self, schema: impl Into<Id<'a>>) -> crate::Result<Self> {
         let schema: Id<'static> = schema.into().into_owned();
+
+        self.cluster()
+            .catalog(self.default_catalog())
+            .ok_or_else(|| crate::EngineError::CatalogNotFound(self.default_catalog().to_string()))?
+            .schema(schema.as_ref())
+            .ok_or_else(|| crate::EngineError::SchemaNotFound(schema.to_string()))?;
+
         let config = self
             .state
             .config()
@@ -60,7 +74,7 @@ impl SynapseContext {
             .default_schema(schema)
             .build();
         self.state.with_config(config);
-        self
+        Ok(self)
     }
 
     pub async fn query(&self, sql: impl AsRef<str>) -> crate::Result<Lazy> {
@@ -121,6 +135,22 @@ impl SynapseContext {
                 or_replace,
             )
             .await
+    }
+
+    pub async fn create_schema<'a>(
+        &self,
+        schema: impl Into<SchemaRef<'a>>,
+        if_not_exists: bool,
+    ) -> crate::Result<Arc<SynapseSchema>> {
+        self.state.create_schema(schema, if_not_exists).await
+    }
+
+    pub async fn create_catalog<'a>(
+        &self,
+        catalog: impl Into<Id<'a>>,
+        if_not_exists: bool,
+    ) -> crate::Result<Arc<SynapseCatalog>> {
+        self.state.create_catalog(catalog, if_not_exists).await
     }
 
     pub fn table<'a>(&self, table: impl Into<TableRef<'a>>) -> Option<Arc<SynapseTable>> {

@@ -14,6 +14,78 @@ use uuid::{Builder, NoContext, Timestamp, Uuid};
 use crate::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct SchemaRef<'a> {
+    pub catalog: Option<Id<'a>>,
+    pub schema: Id<'a>,
+}
+
+impl<'a> Display for SchemaRef<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(catalog) = &self.catalog {
+            write!(f, "{}.", catalog)?;
+        }
+        write!(f, "{}", self.schema)
+    }
+}
+
+impl<'a> SchemaRef<'a> {
+    pub fn resolve(&self, default_catalog: &Id<'_>) -> SchemaId<'static> {
+        SchemaId {
+            catalog: self
+                .catalog
+                .as_ref()
+                .unwrap_or(default_catalog)
+                .clone()
+                .into_owned(),
+            schema: self.schema.clone().into_owned(),
+        }
+    }
+
+    pub fn into_owned(self) -> SchemaRef<'static> {
+        SchemaRef {
+            catalog: self.catalog.map(|c| c.into_owned()),
+            schema: self.schema.into_owned(),
+        }
+    }
+}
+
+impl<'a> From<&'a str> for SchemaRef<'a> {
+    fn from(value: &'a str) -> Self {
+        let mut iter = value.rsplit('.');
+        let schema = iter.next().expect("rsplit iter should never be empty");
+        let catalog = iter.next().map(Id::new);
+        SchemaRef {
+            schema: Id::new(schema),
+            catalog,
+        }
+    }
+}
+
+impl From<String> for SchemaRef<'static> {
+    fn from(value: String) -> Self {
+        SchemaRef::from(value.as_ref()).into_owned()
+    }
+}
+
+impl<'a> From<Id<'a>> for SchemaRef<'a> {
+    fn from(schema: Id<'a>) -> Self {
+        SchemaRef {
+            catalog: None,
+            schema,
+        }
+    }
+}
+
+impl<'a> From<SchemaId<'a>> for SchemaRef<'a> {
+    fn from(value: SchemaId<'a>) -> Self {
+        Self {
+            schema: value.schema,
+            catalog: Some(value.catalog),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TableRef<'a> {
     pub catalog: Option<Id<'a>>,
     pub schema: Option<Id<'a>>,

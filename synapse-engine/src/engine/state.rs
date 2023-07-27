@@ -8,11 +8,13 @@ use datafusion::{
 use object_store::ObjectStore;
 
 use crate::{
+    catalog::SynapseCatalog,
     cluster::SynapseCluster,
     codec::SynapseExtensionCodec,
     config::SynapseConfig,
     lazy::{Lazy, LocalBackend},
-    registry::{Id, TableId, TableRef, TransactionLog},
+    registry::{Id, SchemaRef, TableId, TableRef, TransactionLog},
+    schema::SynapseSchema,
     table::{
         info::{TableInfo, TopicInfo, ViewInfo},
         SynapseTable, SynapseTopic, SynapseView,
@@ -280,6 +282,28 @@ impl SynapseState {
             .catalog(table.catalog)?
             .schema(table.schema)?
             .table(table.table)
+    }
+
+    pub async fn create_catalog<'a>(
+        &self,
+        catalog: impl Into<Id<'a>>,
+        if_not_exists: bool,
+    ) -> crate::Result<Arc<SynapseCatalog>> {
+        self.cluster().create_catalog(catalog, if_not_exists).await
+    }
+
+    pub async fn create_schema<'a>(
+        &self,
+        schema: impl Into<SchemaRef<'a>>,
+        if_not_exists: bool,
+    ) -> crate::Result<Arc<SynapseSchema>> {
+        let schema: SchemaRef<'a> = schema.into();
+        let schema = schema.resolve(self.default_catalog());
+        let catalog = self
+            .cluster
+            .catalog(&schema.catalog)
+            .ok_or_else(|| crate::EngineError::CatalogNotFound(schema.catalog.to_string()))?;
+        catalog.create_schema(schema.schema, if_not_exists).await
     }
 
     pub fn resolve(&self, table: TableRef<'_>) -> TableId<'static> {

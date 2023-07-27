@@ -68,6 +68,14 @@ impl<'a> GetTable<'a> {
             info: info.into(),
         }
     }
+
+    pub fn replace(self, info: impl Into<TableInfo>) -> CreateOrReplaceTable<'a> {
+        CreateOrReplaceTable(CreateTable {
+            inner: self.inner,
+            table: self.table,
+            info: info.into(),
+        })
+    }
 }
 
 impl<'a> IntoFuture for GetTable<'a> {
@@ -97,7 +105,7 @@ impl<'a> IntoFuture for GetOrCreateTable<'a> {
                 Some(table) => table,
                 None => {
                     self.inner
-                        .create_table_inner(self.table, self.info, true, false)
+                        .create_table(self.table, self.info, true, false)
                         .await?
                 }
             })
@@ -135,7 +143,7 @@ impl<'a> IntoFuture for CreateTable<'a> {
     fn into_future(self) -> Self::IntoFuture {
         async move {
             self.inner
-                .create_table_inner(self.table, self.info, false, false)
+                .create_table(self.table, self.info, false, false)
                 .await
         }
         .boxed()
@@ -154,7 +162,7 @@ impl<'a> IntoFuture for CreateOrReplaceTable<'a> {
         async move {
             self.0
                 .inner
-                .create_table_inner(self.0.table, self.0.info, false, true)
+                .create_table(self.0.table, self.0.info, false, true)
                 .await
         }
         .boxed()

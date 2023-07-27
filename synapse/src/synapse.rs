@@ -1,5 +1,7 @@
 use crate::{
+    catalog::GetCatalog,
     engine::lazy::Lazy,
+    schema::GetSchema,
     server::{
         server::SynapseServer,
         tonic::transport::{Channel, Server},
@@ -11,7 +13,7 @@ use std::future::IntoFuture;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use synapse_engine::{
-    registry::{Id, TableRef},
+    registry::{Id, SchemaRef, TableRef},
     table::info::TableInfo,
     SynapseConfig, SynapseContext,
 };
@@ -101,10 +103,18 @@ impl Synapse {
         GetTable::new(self, table.into())
     }
 
+    pub fn catalog<'a>(&'a self, catalog: impl Into<Id<'a>>) -> GetCatalog<'a> {
+        GetCatalog::new(self, catalog.into())
+    }
+
+    pub fn schema<'a>(&'a self, schema: impl Into<SchemaRef<'a>>) -> GetSchema<'a> {
+        GetSchema::new(self, schema.into())
+    }
+
     pub async fn use_catalog<'a>(mut self, catalog: impl Into<Id<'a>>) -> crate::Result<Self> {
         match &mut self.inner {
             SynapseInner::Local { ctx, .. } => {
-                *ctx = ctx.clone().use_catalog(catalog);
+                *ctx = ctx.clone().use_catalog(catalog)?;
             }
             SynapseInner::Remote(client) => client.use_catalog(catalog).await?,
         }
@@ -114,7 +124,7 @@ impl Synapse {
     pub async fn use_schema<'a>(mut self, schema: impl Into<Id<'a>>) -> crate::Result<Self> {
         match &mut self.inner {
             SynapseInner::Local { ctx, .. } => {
-                *ctx = ctx.clone().use_schema(schema);
+                *ctx = ctx.clone().use_schema(schema)?;
             }
             SynapseInner::Remote(client) => client.use_schema(schema).await?,
         }
@@ -133,7 +143,7 @@ impl Synapse {
         })
     }
 
-    pub(crate) async fn create_table_inner(
+    pub(crate) async fn create_table(
         &self,
         table: TableRef<'_>,
         info: TableInfo,
@@ -151,6 +161,38 @@ impl Synapse {
                     .await?,
             ),
         })
+    }
+
+    pub(crate) async fn create_catalog(
+        &mut self,
+        catalog: Id<'_>,
+        if_not_exists: bool,
+    ) -> crate::Result<()> {
+        match &mut self.inner {
+            SynapseInner::Local { ctx, .. } => {
+                ctx.create_catalog(catalog, if_not_exists).await?;
+            }
+            SynapseInner::Remote(client) => {
+                client.create_catalog(catalog, if_not_exists).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn create_schema(
+        &mut self,
+        schema: SchemaRef<'_>,
+        if_not_exists: bool,
+    ) -> crate::Result<()> {
+        match &mut self.inner {
+            SynapseInner::Local { ctx, .. } => {
+                ctx.create_schema(schema, if_not_exists).await?;
+            }
+            SynapseInner::Remote(client) => {
+                client.create_schema(schema, if_not_exists).await?;
+            }
+        }
+        Ok(())
     }
 }
 

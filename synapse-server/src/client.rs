@@ -1,26 +1,17 @@
+mod backend;
 mod publisher;
 
-use std::{collections::VecDeque, fmt::Debug, sync::Arc, task::Poll};
+use std::{fmt::Debug, sync::Arc};
 
 use arrow_flight::{
-    decode::{DecodedPayload, FlightDataDecoder, FlightRecordBatchStream},
     error::FlightError,
-    sql::{client::FlightSqlServiceClient, Any, Command, ProstMessageExt, TicketStatementQuery},
-    FlightData, Ticket,
+    sql::{client::FlightSqlServiceClient, Any, Command},
 };
-use datafusion::{
-    arrow::{datatypes::SchemaRef, record_batch::RecordBatch},
-    datasource::provider_as_source,
-    error::DataFusionError,
-    logical_expr::LogicalPlanBuilder,
-    physical_plan::{RecordBatchStream, SendableRecordBatchStream},
-};
-use futures::{Stream, StreamExt, TryStreamExt};
 use prost::Message;
 use synapse_engine::{
-    lazy::{Lazy, LazyBackend},
-    registry::{Id, TableRef},
-    table::info::{TableInfo, ViewInfo},
+    lazy::Lazy,
+    registry::{Id, SchemaRef, TableRef},
+    table::info::TableInfo,
     Plan, SynapseConfig,
 };
 use tonic::{
@@ -35,6 +26,7 @@ use crate::{
     table::RemoteTable,
 };
 
+use self::backend::RemoteBackend;
 pub use self::publisher::FlightPublisher;
 
 #[derive(Debug, Clone)]
@@ -130,7 +122,7 @@ impl SynapseClient {
             }
         };
         let plan = Plan::from_bytes(&raw_plan)?;
-        Ok(Lazy::new(plan, Arc::new(RemoteBackend(self.clone()))))
+        Ok(Lazy::new(plan, Arc::new(RemoteBackend::from(self.clone()))))
     }
 
     pub async fn set_config(&mut self, config: &SynapseConfig, global: bool) -> crate::Result<()> {
@@ -190,142 +182,38 @@ impl SynapseClient {
         self.set_config(&config, false).await?;
         Ok(())
     }
-}
 
-#[derive(Debug, Default)]
-pub struct FlightStream {
-    partitions: VecDeque<FlightRecordBatchStream>,
-}
-
-impl FlightStream {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn add_partition(&mut self, part: FlightRecordBatchStream) {
-        self.partitions.push_back(part);
-    }
-}
-
-impl Stream for FlightStream {
-    type Item = crate::Result<RecordBatch>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        loop {
-            if let Some(part) = self.partitions.front_mut() {
-                match futures::ready!(part.poll_next_unpin(cx)) {
-                    Some(Ok(batch)) => return Poll::Ready(Some(Ok(batch))),
-                    Some(Err(err)) => return Poll::Ready(Some(Err(err.into()))),
-                    None => {
-                        self.partitions.pop_front();
-                    }
-                }
-            } else {
-                return Poll::Ready(None);
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct RemoteBackend(SynapseClient);
-
-#[tonic::async_trait]
-impl LazyBackend for RemoteBackend {
-    async fn stream(&self, plan: &Plan) -> crate::Result<SendableRecordBatchStream> {
-        let statement_handle = plan.to_bytes().into();
-        let ticket = Ticket {
-            ticket: TicketStatementQuery { statement_handle }
-                .as_any()
-                .encode_to_vec()
-                .into(),
-        };
-        let stream = self
-            .0
-            .flight
-            .clone()
-            .do_get(ticket)
-            .await?
-            .map_err(FlightError::from);
-        Ok(Box::pin(RemoteStream::new(stream).await?))
-    }
-
-    async fn create_view(
-        &self,
-        table: TableRef<'static>,
-        info: ViewInfo,
+    pub async fn create_catalog<'a>(
+        &mut self,
+        catalog: impl Into<Id<'a>>,
         if_not_exists: bool,
-        or_replace: bool,
-    ) -> crate::Result<Plan> {
-        let table = self
-            .0
-            .clone()
-            .create_table(table, info.into(), if_not_exists, or_replace)
-            .await?;
-        let plan = LogicalPlanBuilder::scan(
-            table.id().clone(),
-            provider_as_source(Arc::new(table.as_stub()?)),
-            None,
-        )?
-        .build()?;
-        Ok(Plan::from_stub(plan))
+    ) -> crate::Result<()> {
+        let catalog: Id<'a> = catalog.into();
+        self.engine
+            .create_catalog(gen::CreateCatalogReq {
+                catalog: catalog.to_string(),
+                if_not_exists,
+            })
+            .await
+            .map_err(crate::ClientError::Server)?;
+        Ok(())
     }
-}
 
-struct RemoteStream {
-    inner: FlightDataDecoder,
-    schema: SchemaRef,
-}
-
-impl RemoteStream {
-    async fn new<S>(inner: S) -> Result<Self, FlightError>
-    where
-        S: Stream<Item = Result<FlightData, FlightError>> + Send + 'static,
-    {
-        let mut inner = FlightDataDecoder::new(inner);
-        while let Some(item) = inner.try_next().await? {
-            match item.payload {
-                DecodedPayload::Schema(schema) => return Ok(Self { inner, schema }),
-                DecodedPayload::RecordBatch(_) => {
-                    return Err(FlightError::protocol("received record batch before schema"))
-                }
-                DecodedPayload::None => {}
-            }
-        }
-        Err(FlightError::protocol(
-            "stream closed without sending schema",
-        ))
-    }
-}
-
-impl Stream for RemoteStream {
-    type Item = Result<RecordBatch, DataFusionError>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
-        loop {
-            match futures::ready!(self.inner.poll_next_unpin(cx)) {
-                Some(Ok(item)) => match item.payload {
-                    DecodedPayload::RecordBatch(batch) => return Poll::Ready(Some(Ok(batch))),
-                    _ => {}
-                },
-                Some(Err(error)) => {
-                    return Poll::Ready(Some(Err(DataFusionError::External(Box::new(error)))))
-                }
-                None => return Poll::Ready(None),
-            }
-        }
-    }
-}
-
-impl RecordBatchStream for RemoteStream {
-    fn schema(&self) -> SchemaRef {
-        self.schema.clone()
+    pub async fn create_schema<'a>(
+        &mut self,
+        schema: impl Into<SchemaRef<'a>>,
+        if_not_exists: bool,
+    ) -> crate::Result<()> {
+        let schema: SchemaRef<'a> = schema.into();
+        self.engine
+            .create_schema(gen::CreateSchemaReq {
+                catalog: schema.catalog.map(|c| c.to_string()),
+                schema: schema.schema.to_string(),
+                if_not_exists,
+            })
+            .await
+            .map_err(crate::ClientError::Server)?;
+        Ok(())
     }
 }
 

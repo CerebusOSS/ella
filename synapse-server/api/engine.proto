@@ -5,6 +5,9 @@ package synapse.engine;
 service EngineService {
   rpc GetTable(TableRef) returns (ResolvedTable);
   rpc CreateTable(CreateTableReq) returns (ResolvedTable);
+  rpc CreateCatalog(CreateCatalogReq) returns (CatalogId);
+  rpc CreateSchema(CreateSchemaReq) returns (SchemaId);
+
   rpc SetConfig(Config) returns (Config);
   rpc GetConfig(GetConfigReq) returns (Config);
 }
@@ -14,6 +17,17 @@ message CreateTableReq {
   TableInfo info = 2;
   bool if_not_exists = 3;
   bool or_replace = 4;
+}
+
+message CreateCatalogReq {
+  string catalog = 1;
+  bool if_not_exists = 2;
+}
+
+message CreateSchemaReq {
+  optional string catalog = 1;
+  string schema = 2;
+  bool if_not_exists = 3;
 }
 
 enum ConfigScope {
@@ -98,3 +112,10 @@ message TableRef {
   optional string schema = 2;
   string table = 3;
 }
+
+message SchemaId {
+  string catalog = 1;
+  string schema = 2;
+}
+
+message CatalogId { string catalog = 1; }
