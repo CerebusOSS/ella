@@ -114,6 +114,10 @@ impl ShapeError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
+    #[error("no valid datastore found at {0}")]
+    InvalidDatastore(String),
+    #[error("cannot create datastore at {0}: datastore already exists")]
+    DatastoreExists(String),
     #[error("expected file but {0} is a directory")]
     UnexpectedDirectory(String),
     #[error("invalid synapse filename {0}")]
@@ -128,6 +132,26 @@ pub enum EngineError {
     Worker { id: String, error: String },
     #[error("expected {expected} statement, got {actual}")]
     InvalidSQL { expected: String, actual: String },
+    #[error("catalog {0} not found")]
+    CatalogNotFound(String),
+    #[error("schema {0} not found")]
+    SchemaNotFound(String),
+    #[error("table {0} not found")]
+    TableNotFound(String),
+    #[error("shard {0} not found")]
+    ShardNotFound(String),
+    #[error("failed to create schema {0}: a schema with that ID already exists")]
+    SchemaExists(String),
+    #[error("failed to create catalog {0}: a catalog with that ID already exists")]
+    CatalogExists(String),
+    #[error("failed to create shard {0}: a shard with that ID already exists")]
+    ShardExists(String),
+    #[error("failed to create table {0}: a table with that ID already exists")]
+    TableExists(String),
+    #[error("expected {expected} but got {actual}")]
+    TableKind { expected: String, actual: String },
+    #[error("{0}")]
+    InvalidIndex(String),
 }
 
 impl EngineError {
@@ -137,6 +161,7 @@ impl EngineError {
             actual: actual.to_string(),
         }
     }
+
     pub fn worker_panic(id: &str, error: &Box<dyn Any + Send + 'static>) -> Self {
         let error = if let Some(e) = error.downcast_ref::<String>() {
             e.clone()
@@ -148,6 +173,13 @@ impl EngineError {
         Self::Worker {
             id: id.to_string(),
             error,
+        }
+    }
+
+    pub fn table_kind(expected: &str, actual: &str) -> Self {
+        Self::TableKind {
+            expected: expected.to_string(),
+            actual: actual.to_string(),
         }
     }
 }
@@ -168,15 +200,20 @@ pub enum ServerError {
     InvalidPrepareQuery(String),
     #[error("transport error")]
     Transport(#[source] BoxError),
+    #[error("token error: {0}")]
+    Token(String),
+    #[error("invalid server secret")]
+    InvalidSecret,
 }
 
 #[cfg(feature = "flight")]
 impl ServerError {
     pub fn transport<E>(error: E) -> Self
     where
-        E: std::error::Error + Send + Sync + 'static,
+        E: Into<BoxError>,
+        // E: std::error::Error + Send + Sync + 'static,
     {
-        Self::Transport(Box::new(error))
+        Self::Transport(error.into())
     }
 }
 
@@ -208,4 +245,6 @@ pub enum ClientError {
     MissingEndpoint,
     #[error("invalid server URI: {0}")]
     InvalidUri(String),
+    #[error("authorization token is not a valid string")]
+    InvalidToken,
 }

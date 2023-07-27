@@ -93,6 +93,13 @@ where
         };
         Ok(t)
     }
+
+    pub fn unstack<A: Into<Axis>>(self, axis: A) -> Vec<Tensor<T, S::Smaller>>
+    where
+        S: RemoveAxis,
+    {
+        self.axis_iter(axis).collect::<Vec<_>>()
+    }
 }
 
 struct CombineConcat<'a, T: TensorValue, S> {

@@ -4,6 +4,7 @@ mod builtin_arith;
 mod cmp;
 mod combine;
 mod constructors;
+mod convert;
 mod index;
 mod masked;
 mod reduce;

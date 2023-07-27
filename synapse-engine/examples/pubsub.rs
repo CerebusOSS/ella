@@ -1,4 +1,7 @@
-use engine::{EngineConfig, Schema};
+use engine::{
+    config::{EngineConfig, SynapseConfig},
+    table::{info::TopicBuilder, ColumnBuilder},
+};
 use futures::SinkExt;
 use opentelemetry::{
     sdk::{trace, Resource},
@@ -34,36 +37,25 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    let config = EngineConfig::new().with_serve_metrics("0.0.0.0:8888");
-    let sy = engine::Engine::start_with_config("file:///tmp/synapse/", config).await?;
-
-    let schema = Schema::builder()
-        .field("time")
-        .data_type(TensorType::Timestamp)
-        .required(true)
-        .index(true)
-        .finish()
-        .field("i")
-        .data_type(TensorType::Int32)
-        .finish()
-        .field("dt")
-        .data_type(TensorType::Duration)
-        .finish()
-        .field("x")
-        .data_type(TensorType::Float32)
-        .row_shape((512,))
-        .finish()
-        .field("y")
-        .data_type(TensorType::String)
-        .row_shape((2,))
-        .finish()
+    let config = SynapseConfig::builder()
+        .engine_config(EngineConfig::builder().serve_metrics("0.0.0.0:8888"))
         .build();
+    let ctx = engine::create("file:///tmp/synapse/", config, true).await?;
 
-    let pb = sy.topic("point").get_or_create(schema).await?.publish();
+    let topic = TopicBuilder::new()
+        .column(ColumnBuilder::new("i", TensorType::Int32))
+        .column(ColumnBuilder::new("dt", TensorType::Duration))
+        .column(ColumnBuilder::new("x", TensorType::Float32).row_shape((512,)))
+        .column(ColumnBuilder::new("y", TensorType::String).row_shape((2, 2)));
+    let pb = ctx
+        .create_topic("point", topic, true, false)
+        .await?
+        .publish();
+
     let mut sink = pb.rows(1)?;
 
     let start = synapse_common::now();
-    let end = start + Duration::seconds(5);
+    let end = start + Duration::seconds(2);
     let mut i = 0_i32;
     while synapse_common::now() < end {
         i += 1;
@@ -72,14 +64,17 @@ async fn main() -> anyhow::Result<()> {
             i,
             Duration::milliseconds(50),
             Tensor::linspace(i as f32, (i + 1) as f32, 512),
-            tensor::tensor!["A".to_string(), "B".to_string()],
+            tensor::tensor![
+                ["A".to_string(), "B".to_string()],
+                ["C".to_string(), "D".to_string()]
+            ],
         ))
         .await?;
     }
-    sink.close().await?;
-    drop(sink);
 
-    let mut rows = sy
+    sink.close().await?;
+
+    let mut rows = ctx
         .query("SELECT * FROM point ORDER BY time")
         .await?
         .rows::<(Time, i32, Duration, Tensor1<f32>, Tensor1<String>)>()
@@ -88,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
         println!("{:?}", row);
     }
 
-    sy.shutdown().await?;
+    ctx.shutdown().await?;
     opentelemetry::global::shutdown_tracer_provider();
 
     Ok(())

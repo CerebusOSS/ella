@@ -1,16 +1,36 @@
-pub mod catalog;
-mod context;
-mod engine;
+mod catalog;
+mod cluster;
+pub mod codec;
+
+pub mod config;
+pub mod engine;
 pub mod lazy;
 pub(crate) mod metrics;
 mod path;
+mod plan;
+pub mod registry;
 pub mod schema;
-pub mod topic;
+pub mod table;
 pub(crate) mod util;
 
-pub use context::SynapseContext;
-pub use engine::{Engine, EngineConfig};
+pub use config::SynapseConfig;
+pub use engine::SynapseContext;
 pub use path::Path;
-pub use schema::{ArrowSchema, Schema};
+pub use plan::Plan;
+pub use schema::ArrowSchema;
 pub use synapse_common::{error::EngineError, Error, Result};
-pub use topic::{Topic, TopicConfig};
+pub use table::TableConfig;
+
+pub async fn open(root: &str) -> crate::Result<SynapseContext> {
+    let state = engine::SynapseState::open(root).await?;
+    SynapseContext::new(state)
+}
+
+pub async fn create(
+    root: &str,
+    config: SynapseConfig,
+    if_not_exists: bool,
+) -> crate::Result<SynapseContext> {
+    let state = engine::SynapseState::create(root, config, if_not_exists).await?;
+    SynapseContext::new(state)
+}

@@ -1,55 +1,108 @@
 use crate::gen::{self, engine_service_server::EngineService};
-use futures::stream::BoxStream;
-use synapse_engine::{Engine, Schema};
+use synapse_engine::{registry::TableRef, SynapseConfig};
 use tonic::{Request, Response};
 
-#[derive(Debug, Clone)]
-pub struct SynapseEngineService {
-    engine: Engine,
-}
+use super::auth::connection;
 
-impl SynapseEngineService {
-    pub fn new(engine: Engine) -> Self {
-        Self { engine }
-    }
-}
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SynapseEngineService;
 
 #[tonic::async_trait]
 impl EngineService for SynapseEngineService {
-    type ListTopicsStream = BoxStream<'static, tonic::Result<gen::Topic>>;
-
-    async fn list_topics(
+    async fn get_table(
         &self,
-        _: Request<gen::Empty>,
-    ) -> tonic::Result<Response<Self::ListTopicsStream>> {
-        todo!()
+        request: Request<gen::TableRef>,
+    ) -> tonic::Result<Response<gen::ResolvedTable>> {
+        let state = connection(&request)?.read();
+        let table = state.resolve(request.into_inner().into());
+
+        Ok(Response::new(match state.table(table) {
+            Some(table) => gen::ResolvedTable {
+                table: Some(table.id().clone().into()),
+                info: Some(table.info().try_into()?),
+            },
+            None => gen::ResolvedTable::default(),
+        }))
     }
 
-    async fn create_topic(
+    async fn create_table(
         &self,
-        request: Request<gen::Topic>,
-    ) -> tonic::Result<Response<gen::Empty>> {
+        request: Request<gen::CreateTableReq>,
+    ) -> tonic::Result<Response<gen::ResolvedTable>> {
+        let state = connection(&request)?.read();
         let req = request.into_inner();
-        let name = req.name;
-        let schema = Schema::try_from(
-            req.schema
-                .ok_or_else(|| tonic::Status::invalid_argument("missing topic schema"))?,
-        )?;
-        self.engine.topic(name).create(schema).await?;
+        let table: TableRef<'static> = req
+            .table
+            .ok_or_else(|| tonic::Status::invalid_argument("missing table field in request"))?
+            .into();
+        let table = state.resolve(table);
 
-        Ok(Response::new(gen::Empty::default()))
+        let info = req
+            .info
+            .ok_or_else(|| tonic::Status::invalid_argument("missing table field in request"))?
+            .try_into()?;
+        let table = state
+            .create_table(table, info, req.if_not_exists, req.or_replace)
+            .await?;
+
+        Ok(Response::new(gen::ResolvedTable {
+            table: Some(table.id().clone().into()),
+            info: Some(table.info().try_into()?),
+        }))
     }
 
-    async fn get_topic(
+    async fn set_config(
         &self,
-        request: Request<gen::TopicId>,
-    ) -> tonic::Result<Response<gen::Topic>> {
-        let name = request.into_inner().name;
-        let schema = self
-            .engine
-            .topic(&name)
-            .get()
-            .map(|topic| (**topic.schema()).clone().into());
-        Ok(Response::new(gen::Topic { name, schema }))
+        request: Request<gen::Config>,
+    ) -> tonic::Result<Response<gen::Config>> {
+        let conn = connection(&request)?;
+        let req = request.into_inner();
+        let config: SynapseConfig = serde_json::from_slice(&req.config)
+            .map_err(|err| tonic::Status::invalid_argument(format!("invalid config: {}", err)))?;
+
+        match gen::ConfigScope::from_i32(req.scope) {
+            Some(gen::ConfigScope::Cluster) => todo!(),
+            Some(gen::ConfigScope::Connection) => {
+                conn.set_config(config);
+                let config =
+                    serde_json::to_vec(conn.read().config()).map_err(crate::Error::from)?;
+                Ok(Response::new(gen::Config {
+                    scope: req.scope,
+                    config,
+                }))
+            }
+            None => {
+                return Err(tonic::Status::invalid_argument(format!(
+                    "invalid config scope {}",
+                    req.scope
+                )))
+            }
+        }
+    }
+
+    async fn get_config(
+        &self,
+        request: Request<gen::GetConfigReq>,
+    ) -> tonic::Result<Response<gen::Config>> {
+        let conn = connection(&request)?;
+        let req = request.into_inner();
+
+        match gen::ConfigScope::from_i32(req.scope) {
+            Some(gen::ConfigScope::Cluster) => todo!(),
+            Some(gen::ConfigScope::Connection) => {
+                let config =
+                    serde_json::to_vec(conn.read().config()).map_err(crate::Error::from)?;
+                Ok(Response::new(gen::Config {
+                    scope: req.scope,
+                    config,
+                }))
+            }
+            None => {
+                return Err(tonic::Status::invalid_argument(format!(
+                    "invalid config scope {}",
+                    req.scope
+                )))
+            }
+        }
     }
 }

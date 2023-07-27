@@ -1,8 +1,4 @@
-use crate::{
-    mask::MaskIter,
-    shape::{stride_offset, ShapeIndexIter},
-    Axis, RemoveAxis, Shape, Tensor, TensorValue,
-};
+use crate::{mask::MaskIter, shape::ShapeIndexIter, Axis, RemoveAxis, Shape, Tensor, TensorValue};
 
 use super::TensorData;
 
@@ -125,7 +121,7 @@ where
         if shape.is_standard_layout(&strides) {
             Self::Flat(TensorValuesIter::new(inner.slice(0, shape.size())))
         } else {
-            let shape = ShapeIndexIter::new(shape);
+            let shape = shape.indices();
             Self::Shaped {
                 inner,
                 shape,
@@ -162,36 +158,6 @@ where
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len(), Some(self.len()))
-    }
-
-    fn fold<B, F>(self, init: B, mut f: F) -> B
-    where
-        Self: Sized,
-        F: FnMut(B, Self::Item) -> B,
-    {
-        match self {
-            TensorIter::Flat(inner) => inner.fold(init, f),
-            TensorIter::Shaped {
-                inner,
-                mut shape,
-                strides,
-            } => {
-                let mut accum = init;
-                while let Some(mut index) = shape.index {
-                    let stride = strides.last_elem();
-                    let elem_index = index.last_elem();
-                    let len = shape.shape.last_elem();
-                    let offset = S::stride_offset(&index, &strides);
-                    for i in 0..(len - elem_index) {
-                        let idx = offset + stride_offset(i, stride);
-                        accum = unsafe { f(accum, inner.value_unchecked(idx)) };
-                    }
-                    index.set_last_elem(len - 1);
-                    shape.index = ShapeIndexIter::shape_next(&shape.shape, index);
-                }
-                accum
-            }
-        }
     }
 }
 

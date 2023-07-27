@@ -4,6 +4,7 @@ pub mod ops;
 #[cfg(feature = "pyo3")]
 mod py;
 pub mod row;
+pub mod shape;
 mod tensor_type;
 mod tensor_value;
 pub mod time;

@@ -19,21 +19,20 @@ use arrow_flight::{
     flight_service_server::FlightService, Action, FlightData, FlightDescriptor, FlightEndpoint,
     FlightInfo, HandshakeRequest, HandshakeResponse, Ticket,
 };
-use datafusion::physical_plan::execute_stream;
-use datafusion::sql::parser::{CopyToSource, CopyToStatement, Statement};
-use datafusion::sql::sqlparser::ast::{Ident, ObjectName};
-use datafusion_proto::bytes::{
-    logical_plan_from_bytes_with_extension_codec, logical_plan_to_bytes_with_extension_codec,
-};
+use datafusion::datasource::TableProvider;
+use datafusion::sql::parser::Statement;
+use datafusion::sql::sqlparser::ast::{self, SetExpr};
+use datafusion_proto::bytes::logical_plan_to_bytes_with_extension_codec;
 use futures::{SinkExt, Stream, TryStreamExt};
 use once_cell::sync::Lazy;
 use prost::Message;
 use std::pin::Pin;
+use std::sync::Arc;
+use synapse_engine::engine::SynapseState;
+use synapse_engine::{EngineError, Plan};
 use tonic::{Request, Response, Status, Streaming};
 
-use synapse_engine::Engine;
-
-use crate::remote::SynapseExtensionCodec;
+use super::auth::{connection, ConnectionManager};
 
 macro_rules! status {
     ($desc:expr, $err:expr) => {
@@ -51,35 +50,30 @@ static SQL_INFO: Lazy<SqlInfoData> = Lazy::new(|| {
 });
 
 #[derive(Debug, Clone)]
-pub struct SynapseSqlService {
-    engine: Engine,
-    codec: SynapseExtensionCodec,
+pub(crate) struct SynapseSqlService {
+    connections: ConnectionManager,
 }
 
 impl SynapseSqlService {
-    pub fn new(engine: Engine) -> Self {
-        let codec = SynapseExtensionCodec::new(&engine);
-        Self { engine, codec }
+    pub fn new(connections: ConnectionManager) -> Self {
+        Self { connections }
     }
 }
 
 impl SynapseSqlService {
     async fn execute_plan(
         &self,
+        state: &SynapseState,
         ticket: &[u8],
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        let ctx = self.engine.ctx().session();
-        let plan = logical_plan_from_bytes_with_extension_codec(ticket, ctx, &self.codec)
-            .map_err(crate::Error::from)?;
-        let state = ctx.state();
-        let plan = state
-            .create_physical_plan(&plan)
-            .await
-            .map_err(crate::Error::from)?;
-        let schema = plan.schema();
+        let stream =
+            synapse_engine::lazy::Lazy::new(Plan::from_bytes(ticket)?, Arc::new(state.backend()))
+                .stream()
+                .await?;
 
-        let stream = execute_stream(plan, state.task_ctx())
-            .map_err(crate::Error::from)?
+        let schema = stream.arrow_schema();
+        let stream = stream
+            .into_inner()
             .map_err(|err| FlightError::ExternalError(Box::new(err)));
         let stream = FlightDataEncoderBuilder::new()
             .with_schema(schema)
@@ -100,9 +94,10 @@ impl FlightSqlService for SynapseSqlService {
         Response<Pin<Box<dyn Stream<Item = Result<HandshakeResponse, Status>> + Send>>>,
         Status,
     > {
+        let token = self.connections.handshake()?.into_bytes();
         let result = HandshakeResponse {
             protocol_version: 0,
-            payload: Default::default(),
+            payload: token.into(),
         };
         let result = Ok(result);
         let output = futures::stream::iter(vec![result]);
@@ -115,8 +110,9 @@ impl FlightSqlService for SynapseSqlService {
         request: Request<Ticket>,
         _message: Any,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        let state = connection(&request)?.read();
         let ticket = request.into_inner().ticket;
-        self.execute_plan(&ticket).await
+        self.execute_plan(&state, &ticket).await
     }
 
     #[tracing::instrument(skip(self, request))]
@@ -125,14 +121,16 @@ impl FlightSqlService for SynapseSqlService {
         query: CommandStatementQuery,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        let state = self.engine.ctx().session().state();
+        let state = connection(&request)?.read();
+        let codec = state.codec();
+        let state = state.session();
         let mut plan = state
             .create_logical_plan(&query.query)
             .await
             .map_err(crate::Error::from)?;
         plan = state.optimize(&plan).map_err(crate::Error::from)?;
 
-        let statement_handle = logical_plan_to_bytes_with_extension_codec(&plan, &self.codec)
+        let statement_handle = logical_plan_to_bytes_with_extension_codec(&plan, &codec)
             .map_err(crate::Error::from)?;
 
         let ticket = TicketStatementQuery { statement_handle };
@@ -326,9 +324,10 @@ impl FlightSqlService for SynapseSqlService {
     async fn do_get_statement(
         &self,
         ticket: TicketStatementQuery,
-        _request: Request<Ticket>,
+        request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        self.execute_plan(&ticket.statement_handle).await
+        let state = connection(&request)?.read();
+        self.execute_plan(&state, &ticket.statement_handle).await
     }
 
     #[tracing::instrument(skip(self, _request))]
@@ -342,15 +341,16 @@ impl FlightSqlService for SynapseSqlService {
         ))
     }
 
-    #[tracing::instrument(skip(self, _request))]
+    #[tracing::instrument(skip(self, request))]
     async fn do_get_catalogs(
         &self,
         query: CommandGetCatalogs,
-        _request: Request<Ticket>,
+        request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        let state = connection(&request)?.read();
         let mut builder = query.into_builder();
-        for catalog in self.engine.ctx().session().catalog_names() {
-            builder.append(catalog);
+        for catalog in state.cluster().catalogs() {
+            builder.append(catalog.id().to_string());
         }
         let schema = builder.schema();
         let batch = builder.build();
@@ -361,19 +361,21 @@ impl FlightSqlService for SynapseSqlService {
         Ok(Response::new(Box::pin(stream)))
     }
 
-    #[tracing::instrument(skip(self, _request))]
+    #[tracing::instrument(skip(self, request))]
     async fn do_get_schemas(
         &self,
         query: CommandGetDbSchemas,
-        _request: Request<Ticket>,
+        request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        let state = connection(&request)?.read();
         let mut builder = query.into_builder();
 
-        let ctx = self.engine.ctx().session();
-        for name in ctx.catalog_names() {
-            let catalog = ctx.catalog(&name).unwrap();
-            for schema in catalog.schema_names() {
-                builder.append(name.clone(), schema);
+        for catalog in state.cluster().catalogs() {
+            for schema in catalog.schemas() {
+                builder.append(
+                    schema.id().catalog.to_string(),
+                    schema.id().schema.to_string(),
+                );
             }
         }
 
@@ -386,27 +388,24 @@ impl FlightSqlService for SynapseSqlService {
         Ok(Response::new(Box::pin(stream)))
     }
 
-    #[tracing::instrument(skip(self, _request))]
+    #[tracing::instrument(skip(self, request))]
     async fn do_get_tables(
         &self,
         query: CommandGetTables,
-        _request: Request<Ticket>,
+        request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        let ctx = self.engine.ctx().session();
-
+        let state = connection(&request)?.read();
         let mut builder = query.into_builder();
-        for catalog_name in ctx.catalog_names() {
-            let catalog = ctx.catalog(&catalog_name).unwrap();
-            for schema_name in catalog.schema_names() {
-                let schema = catalog.schema(&schema_name).unwrap();
-                for table_name in schema.table_names() {
-                    let table = schema.table(&table_name).await.unwrap();
+        for catalog in state.cluster().catalogs() {
+            for schema in catalog.schemas() {
+                for table in schema.tables() {
+                    let id = table.id();
                     builder
                         .append(
-                            catalog_name.clone(),
-                            schema_name.clone(),
-                            table_name,
-                            "TABLE",
+                            id.catalog.to_string(),
+                            id.schema.to_string(),
+                            id.table.to_string(),
+                            table.kind(),
                             &table.schema(),
                         )
                         .map_err(|e| status!("Failed to serialize table info", e))?;
@@ -441,7 +440,6 @@ impl FlightSqlService for SynapseSqlService {
         let builder = query.into_builder(&SQL_INFO);
         let schema = builder.schema();
         let batch = builder.build();
-        // let batch = SQL_INFO.filter(&query.info).encode();
         let stream = FlightDataEncoderBuilder::new()
             .with_schema(schema)
             .build(futures::stream::once(async { batch }))
@@ -508,32 +506,47 @@ impl FlightSqlService for SynapseSqlService {
         ticket: CommandStatementUpdate,
         request: Request<Streaming<FlightData>>,
     ) -> Result<i64, Status> {
-        let state = self.engine.ctx().session().state();
-        let stmt = state
-            .sql_to_statement(&ticket.query, &state.config().options().sql_parser.dialect)
+        let state = connection(&request)?.read();
+        let session = state.session();
+        let stmt = session
+            .sql_to_statement(
+                &ticket.query,
+                &session.config().options().sql_parser.dialect,
+            )
             .map_err(crate::Error::from)?;
-        match stmt {
-            Statement::CopyTo(CopyToStatement {
-                source: CopyToSource::Relation(ObjectName(idents)),
-                target,
-                ..
-            }) if idents[..] == [Ident::new("this")] => {
-                let mut stream = FlightRecordBatchStream::new_from_flight_data(
-                    request.into_inner().map_err(Into::into),
-                );
-                let mut pb = self.engine.topic(target).get().unwrap().publish();
-                let mut rows = 0;
-                while let Some(batch) = stream.try_next().await? {
-                    rows += batch.num_rows();
-                    pb.send(batch).await?;
+
+        if let Statement::Statement(stmt) = stmt {
+            if let ast::Statement::Insert {
+                source, table_name, ..
+            } = stmt.as_ref()
+            {
+                if let SetExpr::Table(src) = source.body.as_ref() {
+                    if src.schema_name.is_none() && src.table_name.as_deref() == Some("this") {
+                        let mut stream = FlightRecordBatchStream::new_from_flight_data(
+                            request.into_inner().map_err(Into::into),
+                        );
+                        let mut pb = state
+                            .table(state.resolve(table_name.to_string().into()))
+                            .and_then(|t| t.as_topic())
+                            .ok_or_else(|| {
+                                crate::Error::from(EngineError::TableNotFound(
+                                    table_name.to_string(),
+                                ))
+                            })?
+                            .publish();
+
+                        let mut rows = 0;
+                        while let Some(batch) = stream.try_next().await? {
+                            rows += batch.num_rows();
+                            pb.send(batch).await?;
+                        }
+                        pb.flush().await?;
+                        return Ok(rows as i64);
+                    }
                 }
-                pb.flush().await?;
-                Ok(rows as i64)
-            }
-            _ => {
-                todo!()
             }
         }
+        todo!()
     }
 
     #[tracing::instrument(skip(self, _request))]

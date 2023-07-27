@@ -2,14 +2,13 @@ use super::METRICS;
 use prometheus_client::encoding::text::encode;
 use std::io;
 use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::Mutex;
 
 use hyper::service::{make_service_fn, service_fn};
 use tokio::{sync::Notify, task::JoinHandle};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct MetricsServer {
-    handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    handle: JoinHandle<()>,
     stop: Arc<Notify>,
 }
 
@@ -17,18 +16,14 @@ impl MetricsServer {
     pub fn start(address: SocketAddr) -> Self {
         let stop = Arc::new(Notify::new());
         let run_stop = stop.clone();
-        let handle = Arc::new(Mutex::new(Some(tokio::spawn(Self::run(address, run_stop)))));
+        let handle = tokio::spawn(Self::run(address, run_stop));
         Self { handle, stop }
     }
 
-    pub async fn stop(&self) {
+    pub async fn stop(self) {
         self.stop.notify_one();
-        let mut lock = self.handle.lock().await;
-        if let Some(handle) = lock.as_mut() {
-            if let Err(error) = handle.await {
-                tracing::error!(?error, "metrics server panicked");
-            }
-            *lock = None;
+        if let Err(error) = self.handle.await {
+            tracing::error!(?error, "metrics server panicked");
         }
     }
 

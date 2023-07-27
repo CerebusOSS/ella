@@ -1,195 +1,201 @@
-use std::sync::Arc;
+use std::{any::Any, sync::Arc};
 
 pub use arrow_schema::Schema as ArrowSchema;
-use arrow_schema::{Field, SortOptions};
+use dashmap::DashMap;
 use datafusion::{
-    parquet::format::SortingColumn, physical_expr::PhysicalSortExpr,
-    physical_plan::expressions::Column,
+    catalog::schema::SchemaProvider, datasource::TableProvider, error::DataFusionError,
 };
-use synapse_tensor::{tensor_schema, Dyn, IntoShape, Shape, TensorType};
 
-use crate::util::parquet::parquet_compat_schema;
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct IndexColumn {
-    pub name: String,
-    pub column: usize,
-    pub ascending: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Schema {
-    inner: Arc<ArrowSchema>,
-    index_columns: Vec<IndexColumn>,
-    parquet: Option<Arc<ArrowSchema>>,
-}
-
-impl Schema {
-    pub fn new(arrow_schema: Arc<ArrowSchema>, index_columns: Vec<IndexColumn>) -> Self {
-        let parquet = parquet_compat_schema(arrow_schema.clone());
-        Self {
-            inner: arrow_schema,
-            index_columns,
-            parquet,
-        }
-    }
-
-    #[must_use]
-    pub fn builder() -> SchemaBuilder {
-        SchemaBuilder::new()
-    }
-
-    pub fn arrow_schema(&self) -> &Arc<ArrowSchema> {
-        &self.inner
-    }
-
-    pub fn parquet_schema(&self) -> Option<&Arc<ArrowSchema>> {
-        self.parquet.as_ref()
-    }
-
-    pub fn index_columns(&self) -> &[IndexColumn] {
-        &self.index_columns
-    }
-
-    pub(crate) fn output_ordering(&self) -> Option<Vec<PhysicalSortExpr>> {
-        if self.index_columns.is_empty() {
-            None
-        } else {
-            let cols = self
-                .index_columns
-                .iter()
-                .map(|col| PhysicalSortExpr {
-                    expr: Arc::new(Column::new(&col.name, col.column)),
-                    options: SortOptions {
-                        descending: !col.ascending,
-                        nulls_first: true,
-                    },
-                })
-                .collect::<Vec<_>>();
-            Some(cols)
-        }
-    }
-
-    pub(crate) fn sorting_columns(&self) -> Option<Vec<SortingColumn>> {
-        if self.index_columns.is_empty() {
-            None
-        } else {
-            let cols = self
-                .index_columns
-                .iter()
-                .map(|col| SortingColumn::new(col.column as i32, !col.ascending, false))
-                .collect::<Vec<_>>();
-            Some(cols)
-        }
-    }
-}
+use crate::{
+    engine::SynapseState,
+    registry::{snapshot::SchemaState, transactions::DropTable, Id, SchemaId, TransactionLog},
+    table::SynapseTable,
+};
 
 #[derive(Debug)]
-pub struct SchemaBuilder {
-    fields: Vec<Field>,
-    index_columns: Vec<IndexColumn>,
+pub struct SynapseSchema {
+    id: SchemaId<'static>,
+    tables: DashMap<Id<'static>, Arc<SynapseTable>>,
+    log: Arc<TransactionLog>,
 }
 
-impl SchemaBuilder {
-    fn new() -> Self {
+impl SynapseSchema {
+    pub(crate) fn new(id: SchemaId<'static>, log: Arc<TransactionLog>) -> Self {
         Self {
-            fields: Vec::new(),
-            index_columns: Vec::new(),
+            id,
+            tables: DashMap::new(),
+            log,
         }
     }
 
-    #[must_use]
-    pub fn field<S>(&mut self, name: S) -> FieldBuilder<'_, ()>
+    pub fn id(&self) -> &SchemaId<'static> {
+        &self.id
+    }
+
+    pub fn tables(&self) -> Vec<Arc<SynapseTable>> {
+        self.tables.iter().map(|t| t.value().clone()).collect()
+    }
+
+    pub fn table<'a>(&self, id: impl Into<Id<'a>>) -> Option<Arc<SynapseTable>> {
+        let id: Id<'a> = id.into();
+        self.tables.get(id.as_ref()).map(|t| t.value().clone())
+    }
+
+    pub async fn register<'a>(
+        &self,
+        id: impl Into<Id<'a>>,
+        table: Arc<SynapseTable>,
+    ) -> crate::Result<()> {
+        let id: Id<'static> = id.into().into_owned();
+        if self.tables.contains_key(&id) {
+            return Err(crate::EngineError::TableExists(self.id.table(id).to_string()).into());
+        }
+        self.log.commit(table.transaction()).await?;
+        self.tables.insert(id, table);
+        Ok(())
+    }
+
+    async fn deregister<'a, F>(
+        &self,
+        id: impl Into<Id<'a>>,
+        if_exists: bool,
+        f: F,
+    ) -> crate::Result<()>
     where
-        S: Into<String>,
+        F: FnOnce(&Arc<SynapseTable>) -> bool,
     {
-        FieldBuilder::new(self, name.into())
-    }
-
-    pub fn build(&mut self) -> Schema {
-        let inner = Arc::new(ArrowSchema::new(self.fields.clone()));
-        let parquet = parquet_compat_schema(inner.clone());
-        Schema {
-            inner,
-            parquet,
-            index_columns: self.index_columns.clone(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct FieldBuilder<'a, T> {
-    schema: &'a mut SchemaBuilder,
-    name: String,
-    data_type: T,
-    row_shape: Option<Dyn>,
-    required: bool,
-    index: Option<IndexColumn>,
-}
-
-impl<'a> FieldBuilder<'a, ()> {
-    fn new(schema: &'a mut SchemaBuilder, name: String) -> Self {
-        Self {
-            schema,
-            name,
-            data_type: (),
-            row_shape: None,
-            required: false,
-            index: None,
+        let id: Id<'a> = id.into();
+        let table = self.tables.remove_if(id.as_ref(), |_k, v| f(v));
+        match (if_exists, table) {
+            (_, Some((_, table))) => {
+                table.drop_shards().await?;
+                self.log
+                    .commit(DropTable::new(self.id.table(id.into_owned())))
+                    .await?;
+                Ok(())
+            }
+            (true, None) => Ok(()),
+            (false, None) => {
+                Err(crate::EngineError::TableNotFound(self.id.table(id).to_string()).into())
+            }
         }
     }
 
-    #[must_use]
-    pub fn data_type(self, dtype: TensorType) -> FieldBuilder<'a, TensorType> {
-        FieldBuilder {
-            schema: self.schema,
-            name: self.name,
-            data_type: dtype,
-            row_shape: self.row_shape,
-            required: self.required,
-            index: self.index,
+    pub async fn drop_table<'a>(
+        &self,
+        id: impl Into<Id<'a>>,
+        if_exists: bool,
+    ) -> crate::Result<()> {
+        self.deregister(id, if_exists, |_| true).await
+    }
+
+    pub async fn drop_topic<'a>(
+        &self,
+        id: impl Into<Id<'a>>,
+        if_exists: bool,
+    ) -> crate::Result<()> {
+        self.deregister(id, if_exists, |table: &Arc<SynapseTable>| {
+            table.as_topic().is_some()
+        })
+        .await
+    }
+
+    pub async fn drop_view<'a>(&self, id: impl Into<Id<'a>>, if_exists: bool) -> crate::Result<()> {
+        self.deregister(id, if_exists, |table: &Arc<SynapseTable>| {
+            table.as_view().is_some()
+        })
+        .await
+    }
+
+    pub(crate) async fn close(&self) -> crate::Result<()> {
+        let results = futures::future::join_all(
+            self.tables()
+                .into_iter()
+                .map(|t| async move { t.close().await }),
+        )
+        .await;
+        results
+            .into_iter()
+            .find(|res| res.is_err())
+            .unwrap_or_else(|| Ok(()))
+    }
+
+    pub(crate) async fn drop_tables(&self) -> crate::Result<()> {
+        // This collect is necessary to avoid a lifetime issue.
+        let tables = self
+            .tables
+            .iter()
+            .map(|t| t.id().table.clone())
+            .collect::<Vec<_>>();
+
+        for table in tables {
+            self.deregister(table, true, |_| true).await?;
         }
+        Ok(())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.tables.is_empty()
+    }
+
+    pub(crate) fn load(schema: &SchemaState, state: &SynapseState) -> crate::Result<Self> {
+        let tables = DashMap::new();
+
+        for table in &schema.tables {
+            tables.insert(
+                table.id.table.clone(),
+                Arc::new(SynapseTable::load(table, state)?),
+            );
+        }
+
+        Ok(Self {
+            id: schema.id.clone(),
+            tables,
+            log: state.log().clone(),
+        })
+    }
+
+    pub(crate) fn resolve(&self, state: &SynapseState) -> crate::Result<()> {
+        for table in &self.tables {
+            table.resolve(state)?;
+        }
+        Ok(())
     }
 }
 
-impl<'a, T> FieldBuilder<'a, T> {
-    #[must_use]
-    pub fn row_shape<S>(mut self, shape: S) -> Self
-    where
-        S: IntoShape,
-    {
-        self.row_shape = Some(shape.into_shape().as_dyn());
+#[async_trait::async_trait]
+impl SchemaProvider for SynapseSchema {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 
-    #[must_use]
-    pub fn required(mut self, required: bool) -> Self {
-        self.required = required;
-        self
+    fn table_names(&self) -> Vec<String> {
+        self.tables
+            .iter()
+            .map(|t| t.key().to_string())
+            .collect::<Vec<_>>()
     }
 
-    pub fn index(mut self, ascending: bool) -> Self {
-        self.index = Some(IndexColumn {
-            name: self.name.clone(),
-            column: self.schema.fields.len(),
-            ascending,
-        });
-        self
+    async fn table(&self, name: &str) -> Option<Arc<dyn TableProvider>> {
+        self.table(name).map(|t| t as Arc<_>)
     }
-}
 
-impl<'a> FieldBuilder<'a, TensorType> {
-    pub fn finish(self) -> &'a mut SchemaBuilder {
-        let field = tensor_schema(
-            self.name.clone(),
-            self.data_type,
-            self.row_shape,
-            !self.required,
-        );
-        self.schema.fields.push(field);
-        if let Some(index) = self.index {
-            self.schema.index_columns.push(index);
-        }
-        self.schema
+    fn register_table(
+        &self,
+        _name: String,
+        _table: Arc<dyn TableProvider>,
+    ) -> Result<Option<Arc<dyn TableProvider>>, DataFusionError> {
+        unimplemented!()
+    }
+
+    fn deregister_table(
+        &self,
+        _name: &str,
+    ) -> Result<Option<Arc<dyn TableProvider>>, DataFusionError> {
+        unimplemented!()
+    }
+
+    fn table_exist(&self, name: &str) -> bool {
+        self.tables.contains_key(name)
     }
 }

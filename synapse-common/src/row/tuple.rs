@@ -95,6 +95,7 @@ macro_rules! impl_tuple_row {
         impl<$($t),*> RowFormatView<($($t,)*)> for TupleView<($($t,)*), ($($t::View,)*)>
         where $($t: RowFormat),*
         {
+            #[inline]
             fn len(&self) -> usize {
                 self.len
             }

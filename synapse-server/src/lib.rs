@@ -1,7 +1,7 @@
 pub mod client;
 mod convert;
-mod remote;
 pub mod server;
+pub mod table;
 
 pub use tonic;
 

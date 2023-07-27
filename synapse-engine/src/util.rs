@@ -7,53 +7,44 @@ use arrow_schema::Schema;
 use datafusion::{
     error::DataFusionError, physical_expr::PhysicalSortExpr, physical_plan::expressions::Column,
 };
-use futures::TryStreamExt;
+use futures::{TryFutureExt, TryStreamExt};
 use synapse_common::Duration;
-use tokio::{
-    sync::{Mutex, Notify},
-    task::JoinHandle,
-    time::MissedTickBehavior,
-};
-use tracing::{Instrument, Level};
+use tokio::{sync::Notify, task::JoinHandle, time::MissedTickBehavior};
+use tracing::Instrument;
 
-use crate::{catalog::Catalog, topic::compact_shards, SynapseContext, Topic};
+use crate::{
+    engine::SynapseState,
+    table::{topic::compact_shards, SynapseTable},
+};
 
 #[derive(Debug)]
 pub struct Maintainer {
-    handle: Mutex<Option<JoinHandle<()>>>,
+    handle: JoinHandle<()>,
     stop: Arc<Notify>,
 }
 
 impl Maintainer {
-    pub fn new(catalog: Arc<Catalog>, ctx: Arc<SynapseContext>, interval: Duration) -> Self {
+    pub fn new(state: Arc<SynapseState>, interval: Duration) -> Self {
         let stop = Arc::new(Notify::new());
         let worker = MaintenanceWorker {
-            catalog,
-            ctx,
+            state,
             interval,
             stop: stop.clone(),
         };
-        let handle = Mutex::new(Some(tokio::spawn(
-            worker.run().instrument(tracing::trace_span!("maintainer")),
-        )));
+        let handle = tokio::spawn(worker.run().instrument(tracing::info_span!("maintainer")));
         Self { handle, stop }
     }
 
-    pub async fn stop(&self) {
+    pub async fn stop(self) {
         self.stop.notify_one();
-        let mut lock = self.handle.lock().await;
-        if let Some(handle) = lock.as_mut() {
-            if let Err(error) = handle.await {
-                tracing::error!(error=?error, "maintenance worker panicked");
-            }
-            *lock = None;
+        if let Err(error) = self.handle.await {
+            tracing::error!(error=?error, "maintenance worker panicked");
         }
     }
 }
 
 struct MaintenanceWorker {
-    catalog: Arc<Catalog>,
-    ctx: Arc<SynapseContext>,
+    state: Arc<SynapseState>,
     interval: Duration,
     stop: Arc<Notify>,
 }
@@ -67,14 +58,25 @@ impl MaintenanceWorker {
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    for topic in self.catalog.topics() {
-                        if let Err(error) = self.compact_topic(&topic).await {
-                            tracing::error!(topic=%topic.id(), error=?error, "failed to compact topic");
-                        }
+                    let tables = self.state.cluster().catalogs()
+                        .into_iter()
+                        .flat_map(|c| c.schemas())
+                        .flat_map(|s| s.tables());
 
-                        if let Err(error) = self.cleanup_topic(&topic).await {
-                            tracing::error!(topic=%topic.id(), error=?error, "failed to cleanup topic");
-                        }
+                    for table in tables {
+                        self.compact_table(&table)
+                            .unwrap_or_else(|error| {
+                                tracing::error!(error=?error, "failed to compact topic");
+                            })
+                            .instrument(tracing::info_span!("compact", table=%table.id()))
+                            .await;
+
+                        self.cleanup_table(&table)
+                            .unwrap_or_else(|error| {
+                                tracing::error!(error=?error, "failed to cleanup topic");
+                            })
+                            .instrument(tracing::info_span!("compact", table=%table.id()))
+                            .await;
                     }
                 },
                 _ = &mut stop => break,
@@ -82,12 +84,15 @@ impl MaintenanceWorker {
         }
     }
 
-    #[tracing::instrument(skip_all, fields(topic=%topic.id()), level = Level::TRACE)]
-    async fn compact_topic(&self, topic: &Arc<Topic>) -> crate::Result<()> {
+    async fn compact_table(&self, table: &Arc<SynapseTable>) -> crate::Result<()> {
         let mut pending = vec![];
         let mut pending_rows = 0;
-        let target_rows = topic.config().target_shard_size;
-        let shards = topic.shards().readable_shards().await;
+        let target_rows = table.config().target_shard_size;
+        let shard_set = match table.shards() {
+            Some(s) => s.clone(),
+            None => return Ok(()),
+        };
+        let shards = shard_set.readable_shards().await;
         for shard in &shards {
             if let Some(rows) = shard.rows {
                 if rows < target_rows {
@@ -103,26 +108,30 @@ impl MaintenanceWorker {
         if pending.len() > 1 {
             compact_shards(
                 pending,
-                topic.schema().clone(),
-                topic.shards().clone(),
-                self.ctx.clone(),
-                topic.config().shard_config(),
+                table.file_schema(),
+                table.sort(),
+                shard_set,
+                self.state.clone(),
+                table.config().shard_config(),
             )
             .await?;
         }
         Ok(())
     }
 
-    #[tracing::instrument(skip_all, fields(topic=%topic.id()), level = Level::TRACE)]
-    async fn cleanup_topic(&self, topic: &Arc<Topic>) -> crate::Result<()> {
-        let store = self.ctx.store();
+    async fn cleanup_table(&self, table: &Arc<SynapseTable>) -> crate::Result<()> {
+        let store = self.state.store();
         let mut files = store
-            .list(Some(&topic.path().as_path()))
+            .list(Some(&table.path().as_path()))
             .await?
             .map_ok(|f| f.location)
             .try_collect::<HashSet<_>>()
             .await?;
-        let shards = topic.shards().all_shards().await;
+
+        let shards = match table.shards() {
+            Some(s) => s.all_shards().await,
+            None => return Ok(()),
+        };
         for shard in shards {
             files.remove(&shard.path.as_path());
         }

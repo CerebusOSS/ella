@@ -10,6 +10,7 @@ use tokio::sync::{
     mpsc::{self, error::TrySendError},
     Notify,
 };
+use tracing::Instrument;
 
 #[derive(Debug)]
 pub struct ValueTracker {
@@ -130,7 +131,7 @@ where
     let stop = Arc::new(Notify::new());
     let (send, worker_recv) = mpsc::channel(capacity);
     let (worker_send, recv) = mpsc::channel(capacity);
-    tokio::spawn(process_queue(worker_recv, worker_send, stop.clone()));
+    tokio::spawn(process_queue(worker_recv, worker_send, stop.clone()).in_current_span());
 
     let values = Arc::new(RwLock::new(ValueTracker::new()));
     let queue_in = WorkQueueIn {

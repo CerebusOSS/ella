@@ -1,5 +1,6 @@
 pub mod array;
 mod format;
+mod named;
 pub mod scalar;
 mod sink;
 mod stream;
@@ -8,6 +9,7 @@ pub mod tuple;
 use std::sync::Arc;
 
 pub use format::{RowBatchBuilder, RowFormat, RowFormatView, RowViewIter};
+pub use named::NamedRowFormat;
 pub use sink::RowSink;
 pub use stream::RowStream;
 
@@ -40,6 +42,29 @@ impl<R: RowFormat> RowFormat for Row<R> {
         debug_assert_eq!(values.len(), rows);
 
         Ok(RowView { time, values })
+    }
+}
+
+impl<R: NamedRowFormat> NamedRowFormat for Row<R> {
+    fn name(&self, i: usize) -> String {
+        match i {
+            0 => "time".to_string(),
+            _ => self.1.name(i - 1),
+        }
+    }
+
+    fn data_type(&self, i: usize) -> crate::TensorType {
+        match i {
+            0 => crate::TensorType::Timestamp,
+            _ => self.1.data_type(i - 1),
+        }
+    }
+
+    fn row_shape(&self, i: usize) -> crate::shape::Dyn {
+        match i {
+            0 => crate::shape::Dyn::from([]),
+            _ => self.1.row_shape(i - 1),
+        }
     }
 }
 

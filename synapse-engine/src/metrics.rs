@@ -2,7 +2,7 @@ mod load_monitor;
 #[cfg(feature = "metrics")]
 mod server;
 
-pub use load_monitor::{InstrumentedBuffer, MonitorLoadExt, ReportLoad};
+pub use load_monitor::{InstrumentedBuffer, LoadLabels, MonitorLoadExt, ReportLoad};
 #[cfg(feature = "metrics")]
 pub use server::MetricsServer;
 

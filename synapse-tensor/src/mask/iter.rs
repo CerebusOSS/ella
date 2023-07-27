@@ -78,7 +78,7 @@ where
         if inner.is_standard_layout() {
             Self::Flat(inner.values.into_iter())
         } else {
-            let shape = ShapeIndexIter::new(inner.shape().clone());
+            let shape = inner.shape().clone().indices();
             Self::Shaped { inner, shape }
         }
     }

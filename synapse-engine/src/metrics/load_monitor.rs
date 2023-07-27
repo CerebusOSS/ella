@@ -1,4 +1,4 @@
-use crate::catalog::TopicId;
+use crate::registry::{CatalogId, SchemaId, TableId};
 use flume::r#async::{RecvStream, SendSink};
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use once_cell::sync::Lazy;
@@ -44,15 +44,15 @@ impl<'a, T> ReportLoad for RecvStream<'a, T> {
 }
 
 pub trait MonitorLoadExt: Sized {
-    fn monitor_load(self, topic: &TopicId, buffer: &str) -> InstrumentedBuffer<Self>;
+    fn monitor_load(self, labels: LoadLabels) -> InstrumentedBuffer<Self>;
 }
 
 impl<T> MonitorLoadExt for T
 where
     T: ReportLoad,
 {
-    fn monitor_load(self, topic: &TopicId, buffer: &str) -> InstrumentedBuffer<Self> {
-        InstrumentedBuffer::new(self, topic, buffer)
+    fn monitor_load(self, labels: LoadLabels) -> InstrumentedBuffer<Self> {
+        InstrumentedBuffer::new(self, labels)
     }
 }
 
@@ -67,11 +67,7 @@ impl<T> InstrumentedBuffer<T>
 where
     T: ReportLoad,
 {
-    pub fn new(inner: T, topic: &TopicId, buffer: &str) -> Self {
-        let labels = LoadLabels {
-            topic: topic.to_string(),
-            buffer: buffer.to_string(),
-        };
+    pub fn new(inner: T, labels: LoadLabels) -> Self {
         #[cfg(feature = "metrics")]
         if let Some(cap) = inner.capacity() {
             LOAD_CAPACITY.get_or_create(&labels).set(cap as i64);
@@ -189,9 +185,33 @@ where
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "metrics", derive(EncodeLabelSet))]
-struct LoadLabels {
-    pub topic: String,
+pub struct LoadLabels {
+    pub catalog: Option<String>,
+    pub schema: Option<String>,
+    pub table: Option<String>,
+    pub task: Option<String>,
     pub buffer: String,
+}
+
+impl LoadLabels {
+    pub fn new(buffer: impl Into<String>) -> Self {
+        Self {
+            buffer: buffer.into(),
+            catalog: None,
+            schema: None,
+            table: None,
+            task: None,
+        }
+    }
+    pub fn with<T: ExtendLoadLabels>(mut self, src: &T) -> Self {
+        src.extend(&mut self);
+        self
+    }
+
+    pub fn with_task(mut self, task: impl Into<String>) -> Self {
+        self.task = Some(task.into());
+        self
+    }
 }
 
 #[cfg(feature = "metrics")]
@@ -215,3 +235,28 @@ static LOAD_CAPACITY: Lazy<Family<LoadLabels, Gauge>> = Lazy::new(|| {
     );
     m
 });
+
+pub trait ExtendLoadLabels {
+    fn extend(&self, labels: &mut LoadLabels);
+}
+
+impl<'a> ExtendLoadLabels for CatalogId<'a> {
+    fn extend(&self, labels: &mut LoadLabels) {
+        labels.catalog = self.to_string().into();
+    }
+}
+
+impl<'a> ExtendLoadLabels for SchemaId<'a> {
+    fn extend(&self, labels: &mut LoadLabels) {
+        labels.catalog = self.catalog.to_string().into();
+        labels.schema = self.schema.to_string().into();
+    }
+}
+
+impl<'a> ExtendLoadLabels for TableId<'a> {
+    fn extend(&self, labels: &mut LoadLabels) {
+        labels.catalog = self.catalog.to_string().into();
+        labels.schema = self.schema.to_string().into();
+        labels.table = self.table.to_string().into();
+    }
+}

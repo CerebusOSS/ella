@@ -3,100 +3,109 @@ mod publisher;
 use std::{collections::VecDeque, fmt::Debug, sync::Arc, task::Poll};
 
 use arrow_flight::{
-    decode::FlightRecordBatchStream,
+    decode::{DecodedPayload, FlightDataDecoder, FlightRecordBatchStream},
     error::FlightError,
     sql::{client::FlightSqlServiceClient, Any, Command, ProstMessageExt, TicketStatementQuery},
-    Ticket,
+    FlightData, Ticket,
 };
 use datafusion::{
-    arrow::record_batch::RecordBatch, logical_expr::LogicalPlan, prelude::SessionContext,
+    arrow::{datatypes::SchemaRef, record_batch::RecordBatch},
+    datasource::provider_as_source,
+    error::DataFusionError,
+    logical_expr::LogicalPlanBuilder,
+    physical_plan::{RecordBatchStream, SendableRecordBatchStream},
 };
-use datafusion_proto::bytes::{
-    logical_plan_from_bytes_with_extension_codec, logical_plan_to_bytes_with_extension_codec,
-};
-use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 use prost::Message;
 use synapse_engine::{
     lazy::{Lazy, LazyBackend},
-    Schema,
+    registry::{Id, TableRef},
+    table::info::{TableInfo, ViewInfo},
+    Plan, SynapseConfig,
 };
-use tonic::transport::Channel;
+use tonic::{
+    codegen::InterceptedService,
+    metadata::{Ascii, MetadataValue},
+    service::Interceptor,
+    transport::Channel,
+};
 
 use crate::{
     gen::{self, engine_service_client::EngineServiceClient},
-    remote::RemoteExtensionCodec,
+    table::RemoteTable,
 };
 
 pub use self::publisher::FlightPublisher;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SynapseClient {
     flight: FlightSqlServiceClient<Channel>,
-    engine: EngineServiceClient<Channel>,
-    ctx: Arc<SessionContext>,
-    codec: RemoteExtensionCodec,
-}
-
-impl Debug for SynapseClient {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SynapseClient")
-            .field("flight", &self.flight)
-            .field("engine", &self.engine)
-            .finish_non_exhaustive()
-    }
+    engine: EngineServiceClient<InterceptedService<Channel, BearerAuth>>,
 }
 
 impl SynapseClient {
-    pub fn new(channel: Channel) -> Self {
-        let flight = FlightSqlServiceClient::new(channel.clone());
-        let engine = EngineServiceClient::new(channel);
-        let ctx = Arc::new(SessionContext::new());
-        let codec = RemoteExtensionCodec::default();
-        Self {
-            flight,
-            engine,
-            ctx,
-            codec,
-        }
+    pub async fn connect(channel: Channel) -> crate::Result<Self> {
+        let mut flight = FlightSqlServiceClient::new(channel.clone());
+        let token = flight.handshake("", "").await?;
+        let token =
+            String::from_utf8(token.into()).map_err(|_| crate::ClientError::InvalidToken)?;
+        flight.set_token(token.clone());
+
+        let auth = BearerAuth::try_new(&token)?;
+        let engine = EngineServiceClient::with_interceptor(channel, auth);
+        Ok(Self { flight, engine })
     }
 
-    pub async fn schema(&mut self, topic: &str) -> crate::Result<Option<Schema>> {
-        let resp = self
+    pub async fn create_table(
+        &self,
+        table: TableRef<'_>,
+        info: TableInfo,
+        if_not_exists: bool,
+        or_replace: bool,
+    ) -> crate::Result<RemoteTable> {
+        let mut this = self.clone();
+        let req = gen::CreateTableReq {
+            table: Some(table.into()),
+            info: Some(info.try_into()?),
+            if_not_exists,
+            or_replace,
+        };
+        let resp = this
             .engine
-            .get_topic(gen::TopicId::from(topic.to_string()))
+            .create_table(req)
             .await
-            .map_err(crate::ClientError::from)?
+            .map_err(|err| crate::ClientError::Server(err))?
             .into_inner();
 
-        resp.schema.map(Schema::try_from).transpose()
+        Ok(RemoteTable::new(
+            resp.table.expect("expected table ID in response").into(),
+            resp.info
+                .expect("expected table info in response")
+                .try_into()?,
+            this,
+        ))
     }
 
-    // pub async fn topics(&mut self) -> crate::Result<()> {
-    //     self.engine.list_topics(Empty).await.map_err(crate::ClientError::from)?;
-    // }
-
-    // pub async fn topics(&mut self) -> crate::Result<()> {
-    //     let resp = self.flight.get_tables(CommandGetTables::default()).await?;
-    //     let mut stream = self.get_stream(resp).await?;
-    //     while let Some(batch) = stream.try_next().await? {
-    //         println!("{:?}", batch);
-    //     }
-    //     Ok(())
-    // }
-
-    pub async fn create_topic(&mut self, topic: &str, schema: Schema) -> crate::Result<()> {
-        self.engine
-            .create_topic(gen::Topic {
-                name: topic.to_string(),
-                schema: Some(schema.into()),
-            })
+    pub async fn get_table(&self, table: TableRef<'_>) -> crate::Result<Option<RemoteTable>> {
+        let mut this = self.clone();
+        let resp = this
+            .engine
+            .get_table(gen::TableRef::from(table))
             .await
-            .map_err(crate::ClientError::from)?;
-        Ok(())
-    }
-
-    pub async fn publish(&self, topic: &str) -> crate::Result<FlightPublisher> {
-        FlightPublisher::try_new(self.clone(), topic).await
+            .map_err(|err| crate::ClientError::Server(err))?
+            .into_inner();
+        Ok(match (&resp.table, &resp.info) {
+            (Some(table), Some(info)) => Some(RemoteTable::new(
+                table.clone().into(),
+                info.clone().try_into()?,
+                this,
+            )),
+            (None, None) => None,
+            (_, _) => panic!(
+                "expected empty or fully-populated response, got: {:?}",
+                resp
+            ),
+        })
     }
 
     pub async fn query<S: Into<String>>(&mut self, query: S) -> crate::Result<Lazy> {
@@ -120,8 +129,66 @@ impl SynapseClient {
                 .into())
             }
         };
-        let plan = logical_plan_from_bytes_with_extension_codec(&raw_plan, &self.ctx, &self.codec)?;
+        let plan = Plan::from_bytes(&raw_plan)?;
         Ok(Lazy::new(plan, Arc::new(RemoteBackend(self.clone()))))
+    }
+
+    pub async fn set_config(&mut self, config: &SynapseConfig, global: bool) -> crate::Result<()> {
+        let scope = if global {
+            gen::ConfigScope::Cluster
+        } else {
+            gen::ConfigScope::Connection
+        };
+        self.engine
+            .set_config(gen::Config {
+                scope: scope.into(),
+                config: serde_json::to_vec(config)?,
+            })
+            .await
+            .map_err(crate::ClientError::Server)?;
+        Ok(())
+    }
+
+    pub async fn get_config(&mut self, global: bool) -> crate::Result<SynapseConfig> {
+        let scope = if global {
+            gen::ConfigScope::Cluster
+        } else {
+            gen::ConfigScope::Connection
+        };
+        let resp = self
+            .engine
+            .get_config(gen::GetConfigReq {
+                scope: scope.into(),
+            })
+            .await
+            .map_err(crate::ClientError::Server)?;
+        Ok(serde_json::from_slice(&resp.into_inner().config)?)
+    }
+
+    pub async fn use_catalog<'a>(&mut self, catalog: impl Into<Id<'a>>) -> crate::Result<()> {
+        let catalog: Id<'static> = catalog.into().into_owned();
+
+        let config = self
+            .get_config(false)
+            .await?
+            .into_builder()
+            .default_catalog(catalog)
+            .build();
+        self.set_config(&config, false).await?;
+        Ok(())
+    }
+
+    pub async fn use_schema<'a>(&mut self, schema: impl Into<Id<'a>>) -> crate::Result<()> {
+        let schema: Id<'static> = schema.into().into_owned();
+
+        let config = self
+            .get_config(false)
+            .await?
+            .into_builder()
+            .default_schema(schema)
+            .build();
+        self.set_config(&config, false).await?;
+        Ok(())
     }
 }
 
@@ -168,11 +235,8 @@ struct RemoteBackend(SynapseClient);
 
 #[tonic::async_trait]
 impl LazyBackend for RemoteBackend {
-    async fn stream(
-        &self,
-        plan: &LogicalPlan,
-    ) -> crate::Result<BoxStream<'static, crate::Result<RecordBatch>>> {
-        let statement_handle = logical_plan_to_bytes_with_extension_codec(plan, &self.0.codec)?;
+    async fn stream(&self, plan: &Plan) -> crate::Result<SendableRecordBatchStream> {
+        let statement_handle = plan.to_bytes().into();
         let ticket = Ticket {
             ticket: TicketStatementQuery { statement_handle }
                 .as_any()
@@ -186,8 +250,107 @@ impl LazyBackend for RemoteBackend {
             .do_get(ticket)
             .await?
             .map_err(FlightError::from);
-        Ok(FlightRecordBatchStream::new_from_flight_data(stream)
-            .map_err(crate::Error::from)
-            .boxed())
+        Ok(Box::pin(RemoteStream::new(stream).await?))
+    }
+
+    async fn create_view(
+        &self,
+        table: TableRef<'static>,
+        info: ViewInfo,
+        if_not_exists: bool,
+        or_replace: bool,
+    ) -> crate::Result<Plan> {
+        let table = self
+            .0
+            .clone()
+            .create_table(table, info.into(), if_not_exists, or_replace)
+            .await?;
+        let plan = LogicalPlanBuilder::scan(
+            table.id().clone(),
+            provider_as_source(Arc::new(table.as_stub()?)),
+            None,
+        )?
+        .build()?;
+        Ok(Plan::from_stub(plan))
+    }
+}
+
+struct RemoteStream {
+    inner: FlightDataDecoder,
+    schema: SchemaRef,
+}
+
+impl RemoteStream {
+    async fn new<S>(inner: S) -> Result<Self, FlightError>
+    where
+        S: Stream<Item = Result<FlightData, FlightError>> + Send + 'static,
+    {
+        let mut inner = FlightDataDecoder::new(inner);
+        while let Some(item) = inner.try_next().await? {
+            match item.payload {
+                DecodedPayload::Schema(schema) => return Ok(Self { inner, schema }),
+                DecodedPayload::RecordBatch(_) => {
+                    return Err(FlightError::protocol("received record batch before schema"))
+                }
+                DecodedPayload::None => {}
+            }
+        }
+        Err(FlightError::protocol(
+            "stream closed without sending schema",
+        ))
+    }
+}
+
+impl Stream for RemoteStream {
+    type Item = Result<RecordBatch, DataFusionError>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        loop {
+            match futures::ready!(self.inner.poll_next_unpin(cx)) {
+                Some(Ok(item)) => match item.payload {
+                    DecodedPayload::RecordBatch(batch) => return Poll::Ready(Some(Ok(batch))),
+                    _ => {}
+                },
+                Some(Err(error)) => {
+                    return Poll::Ready(Some(Err(DataFusionError::External(Box::new(error)))))
+                }
+                None => return Poll::Ready(None),
+            }
+        }
+    }
+}
+
+impl RecordBatchStream for RemoteStream {
+    fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct BearerAuth {
+    payload: MetadataValue<Ascii>,
+}
+
+impl BearerAuth {
+    fn try_new(token: &str) -> crate::Result<Self> {
+        let payload = format!("Bearer {token}")
+            .parse()
+            .map_err(|_| crate::ClientError::InvalidToken)?;
+        Ok(Self { payload })
+    }
+}
+
+impl Interceptor for BearerAuth {
+    fn call(
+        &mut self,
+        mut request: tonic::Request<()>,
+    ) -> Result<tonic::Request<()>, tonic::Status> {
+        request
+            .metadata_mut()
+            .insert("authorization", self.payload.clone());
+        Ok(request)
     }
 }

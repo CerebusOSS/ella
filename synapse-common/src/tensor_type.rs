@@ -15,6 +15,7 @@ use datafusion::arrow::datatypes::{DataType, TimeUnit};
     strum::FromRepr,
 )]
 #[repr(u8)]
+#[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum TensorType {
     Bool,

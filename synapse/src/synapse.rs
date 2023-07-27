@@ -1,51 +1,76 @@
 use crate::{
-    engine::{catalog::TopicId, lazy::Lazy, Engine, EngineConfig},
+    engine::lazy::Lazy,
     server::{
         server::SynapseServer,
         tonic::transport::{Channel, Server},
     },
-    topic::TopicRef,
+    table::GetTable,
 };
-use std::io;
+use futures::{future::BoxFuture, FutureExt};
+use std::future::IntoFuture;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
-use synapse_server::client::SynapseClient;
+use synapse_engine::{
+    registry::{Id, TableRef},
+    table::info::TableInfo,
+    SynapseConfig, SynapseContext,
+};
+use synapse_server::{client::SynapseClient, tonic::codegen::http::uri::InvalidUri};
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone)]
-pub struct Synapse(pub(crate) SynapseInner);
+pub struct Synapse {
+    inner: SynapseInner,
+}
 
 #[derive(Debug, Clone)]
 pub(crate) enum SynapseInner {
     Local {
-        engine: Engine,
+        ctx: SynapseContext,
         server: Arc<Mutex<Option<SynapseServer>>>,
     },
     Remote(SynapseClient),
 }
 
 impl Synapse {
-    pub async fn connect(addr: &str) -> crate::Result<Self> {
-        let channel = Channel::builder(
-            addr.parse()
-                .map_err(|_| crate::server::ClientError::InvalidUri(addr.to_string()))?,
-        )
-        .connect()
-        .await?;
-        Ok(Self(SynapseInner::Remote(SynapseClient::new(channel))))
+    fn new(inner: SynapseInner) -> Self {
+        Self { inner }
     }
 
-    pub fn start(root: impl Into<String>) -> EngineBuilder {
-        EngineBuilder {
+    pub async fn connect(addr: impl AsRef<str>) -> crate::Result<Self> {
+        let channel =
+            Channel::builder(addr.as_ref().parse().map_err(|err: InvalidUri| {
+                crate::server::ClientError::InvalidUri(err.to_string())
+            })?)
+            .connect()
+            .await?;
+        let client = SynapseClient::connect(channel).await?;
+        Ok(Self::new(SynapseInner::Remote(client)))
+    }
+
+    pub(crate) fn open(root: impl Into<String>) -> OpenSynapse {
+        OpenSynapse {
             root: root.into(),
-            config: None,
-            addr: None,
+            serve: None,
+            create: None,
         }
     }
 
-    pub async fn shutdown(&self) -> crate::Result<()> {
-        match &self.0 {
-            SynapseInner::Local { engine, server } => {
+    pub(crate) fn create(
+        root: impl Into<String>,
+        config: impl Into<SynapseConfig>,
+    ) -> CreateSynapse {
+        CreateSynapse {
+            root: root.into(),
+            serve: None,
+            config: config.into(),
+            if_not_exists: false,
+        }
+    }
+
+    pub async fn shutdown(self) -> crate::Result<()> {
+        match self.inner {
+            SynapseInner::Local { ctx, server } => {
                 let mut lock = server.lock().await;
                 let res = if let Some(server) = lock.as_mut() {
                     server.stop().await
@@ -53,53 +78,162 @@ impl Synapse {
                     Ok(())
                 };
                 *lock = None;
-                engine.shutdown().await?;
+                ctx.shutdown().await?;
                 res
             }
             SynapseInner::Remote(_) => Ok(()),
         }
     }
 
-    pub async fn query(&mut self, sql: &str) -> crate::Result<Lazy> {
-        match &mut self.0 {
-            SynapseInner::Local { engine, .. } => engine.query(sql).await,
-            SynapseInner::Remote(client) => client.query(sql).await,
+    pub async fn query(&mut self, sql: impl AsRef<str>) -> crate::Result<Lazy> {
+        match &mut self.inner {
+            SynapseInner::Local { ctx, .. } => ctx.query(sql.as_ref()).await,
+            SynapseInner::Remote(client) => client.query(sql.as_ref()).await,
         }
     }
 
-    pub fn topic(&self, topic: impl Into<TopicId>) -> TopicRef<'_> {
-        TopicRef::new(self, topic.into())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct EngineBuilder {
-    root: String,
-    config: Option<EngineConfig>,
-    addr: Option<SocketAddr>,
-}
-
-impl EngineBuilder {
-    pub fn config(&mut self, config: EngineConfig) -> &mut Self {
-        self.config = Some(config);
-        self
+    pub async fn execute(&mut self, sql: impl AsRef<str>) -> crate::Result<()> {
+        self.query(sql).await?.execute().await?;
+        Ok(())
     }
 
-    pub fn serve<A: ToSocketAddrs>(&mut self, addr: A) -> crate::Result<&mut Self> {
-        let addr = addr.to_socket_addrs()?.next().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::AddrNotAvailable, "invalid socket address")
-        })?;
-        self.addr = Some(addr);
+    pub fn table<'a>(&'a self, table: impl Into<TableRef<'a>>) -> GetTable<'a> {
+        GetTable::new(self, table.into())
+    }
+
+    pub async fn use_catalog<'a>(mut self, catalog: impl Into<Id<'a>>) -> crate::Result<Self> {
+        match &mut self.inner {
+            SynapseInner::Local { ctx, .. } => {
+                *ctx = ctx.clone().use_catalog(catalog);
+            }
+            SynapseInner::Remote(client) => client.use_catalog(catalog).await?,
+        }
         Ok(self)
     }
 
-    pub async fn build(&self) -> crate::Result<Synapse> {
-        let engine =
-            Engine::start_with_config(&self.root, self.config.clone().unwrap_or_default()).await?;
-        let server = self
-            .addr
-            .map(|addr| SynapseServer::start(Server::builder(), engine.clone(), addr));
-        let server = Arc::new(Mutex::new(server));
-        Ok(Synapse(SynapseInner::Local { engine, server }))
+    pub async fn use_schema<'a>(mut self, schema: impl Into<Id<'a>>) -> crate::Result<Self> {
+        match &mut self.inner {
+            SynapseInner::Local { ctx, .. } => {
+                *ctx = ctx.clone().use_schema(schema);
+            }
+            SynapseInner::Remote(client) => client.use_schema(schema).await?,
+        }
+        Ok(self)
+    }
+
+    pub(crate) async fn get_table(
+        &self,
+        table: TableRef<'_>,
+    ) -> crate::Result<Option<crate::Table>> {
+        Ok(match &self.inner {
+            SynapseInner::Local { ctx, .. } => ctx.table(table).map(crate::Table::local),
+            SynapseInner::Remote(client) => {
+                client.get_table(table).await?.map(crate::Table::remote)
+            }
+        })
+    }
+
+    pub(crate) async fn create_table_inner(
+        &self,
+        table: TableRef<'_>,
+        info: TableInfo,
+        if_not_exists: bool,
+        or_replace: bool,
+    ) -> crate::Result<crate::Table> {
+        Ok(match &self.inner {
+            SynapseInner::Local { ctx, .. } => crate::Table::local(
+                ctx.create_table(table, info, if_not_exists, or_replace)
+                    .await?,
+            ),
+            SynapseInner::Remote(client) => crate::Table::remote(
+                client
+                    .create_table(table, info, if_not_exists, or_replace)
+                    .await?,
+            ),
+        })
+    }
+}
+
+#[must_use]
+#[derive(Debug)]
+pub struct OpenSynapse {
+    root: String,
+    serve: Option<Vec<SocketAddr>>,
+    create: Option<SynapseConfig>,
+}
+
+impl OpenSynapse {
+    pub fn or_create(mut self, config: impl Into<SynapseConfig>) -> Self {
+        self.create = Some(config.into());
+        self
+    }
+
+    pub fn and_serve<A: ToSocketAddrs>(mut self, addr: A) -> crate::Result<Self> {
+        self.serve = Some(addr.to_socket_addrs()?.collect());
+        Ok(self)
+    }
+}
+
+impl IntoFuture for OpenSynapse {
+    type Output = crate::Result<Synapse>;
+    type IntoFuture = BoxFuture<'static, Self::Output>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        async move {
+            let ctx = if let Some(config) = self.create {
+                crate::engine::create(&self.root, config, true).await?
+            } else {
+                crate::engine::open(&self.root).await?
+            };
+            let server = match self.serve {
+                Some(addrs) => Some(SynapseServer::start(
+                    Server::builder(),
+                    ctx.state().clone(),
+                    &addrs[..],
+                )?),
+                None => None,
+            };
+            let server = Arc::new(Mutex::new(server));
+            Ok(Synapse::new(SynapseInner::Local { ctx, server }))
+        }
+        .boxed()
+    }
+}
+
+#[must_use]
+#[derive(Debug)]
+pub struct CreateSynapse {
+    root: String,
+    serve: Option<Vec<SocketAddr>>,
+    config: SynapseConfig,
+    if_not_exists: bool,
+}
+
+impl CreateSynapse {
+    pub fn if_not_exists(mut self) -> Self {
+        self.if_not_exists = true;
+        self
+    }
+}
+
+impl IntoFuture for CreateSynapse {
+    type Output = crate::Result<Synapse>;
+    type IntoFuture = BoxFuture<'static, Self::Output>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        async move {
+            let ctx = crate::engine::create(&self.root, self.config, self.if_not_exists).await?;
+            let server = match self.serve {
+                Some(addrs) => Some(SynapseServer::start(
+                    Server::builder(),
+                    ctx.state().clone(),
+                    &addrs[..],
+                )?),
+                None => None,
+            };
+            let server = Arc::new(Mutex::new(server));
+            Ok(Synapse::new(SynapseInner::Local { ctx, server }))
+        }
+        .boxed()
     }
 }

@@ -1,4 +1,4 @@
-use std::{fmt::Debug, panic::resume_unwind, sync::Arc, task::Poll};
+use std::{fmt::Debug, panic::resume_unwind, task::Poll};
 
 use arrow_flight::{
     encode::FlightDataEncoderBuilder,
@@ -12,8 +12,7 @@ use futures::{
     FutureExt, Sink, SinkExt, StreamExt,
 };
 use prost::Message;
-use synapse_common::row::{RowFormat, RowSink};
-use synapse_engine::Schema;
+use synapse_engine::{registry::TableId, EngineError};
 use tokio::task::JoinHandle;
 
 use super::SynapseClient;
@@ -21,25 +20,25 @@ use super::SynapseClient;
 pub struct FlightPublisher {
     send: SendSink<'static, RecordBatch>,
     handle: JoinHandle<crate::Result<()>>,
-    schema: Arc<Schema>,
+    table: TableId<'static>,
     stop: AbortHandle,
 }
 
 impl Debug for FlightPublisher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FlightPublisher")
-            .field("schema", &self.schema)
+            .field("table", &self.table)
             .finish_non_exhaustive()
     }
 }
 
 impl FlightPublisher {
-    pub fn new_with_schema(mut client: SynapseClient, topic: &str, schema: Arc<Schema>) -> Self {
+    pub fn new(mut client: SynapseClient, table: TableId<'static>) -> Self {
         let (send, recv) = flume::bounded(1);
         let send = send.into_sink();
         let descriptor = FlightDescriptor::new_cmd(
             CommandStatementUpdate {
-                query: format!("copy this to {}", topic),
+                query: format!("insert into {} table this", table),
                 transaction_id: None,
             }
             .as_any()
@@ -60,25 +59,19 @@ impl FlightPublisher {
         Self {
             send,
             handle,
-            schema,
+            table,
             stop,
         }
     }
 
-    pub async fn try_new(mut client: SynapseClient, topic: &str) -> crate::Result<Self> {
-        let schema = Arc::new(
-            client
-                .schema(topic)
-                .await?
-                .ok_or_else(|| crate::Error::TopicNotFound(topic.to_string()))?,
-        );
-
-        Ok(Self::new_with_schema(client, topic, schema))
-    }
-
-    pub fn rows<R: RowFormat>(self, buffer: usize) -> crate::Result<RowSink<R>> {
-        let schema = self.schema.arrow_schema().clone();
-        RowSink::try_new(self, schema, buffer)
+    fn get_error(&mut self) -> crate::Error {
+        match (&mut self.handle).now_or_never() {
+            Some(Ok(Ok(_))) | None => crate::ClientError::TopicClosed.into(),
+            Some(Err(err)) => {
+                EngineError::worker_panic("flight_publisher", &err.into_panic()).into()
+            }
+            Some(Ok(Err(err))) => err,
+        }
     }
 }
 
@@ -90,9 +83,7 @@ impl Sink<RecordBatch> for FlightPublisher {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
-        self.send
-            .poll_ready_unpin(cx)
-            .map_err(|_| crate::ClientError::TopicClosed.into())
+        self.send.poll_ready_unpin(cx).map_err(|_| self.get_error())
     }
 
     #[inline]
@@ -102,7 +93,7 @@ impl Sink<RecordBatch> for FlightPublisher {
     ) -> Result<(), Self::Error> {
         self.send
             .start_send_unpin(item)
-            .map_err(|_| crate::ClientError::TopicClosed.into())
+            .map_err(|_| self.get_error())
     }
 
     #[inline]
@@ -110,9 +101,7 @@ impl Sink<RecordBatch> for FlightPublisher {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
-        self.send
-            .poll_flush_unpin(cx)
-            .map_err(|_| crate::ClientError::TopicClosed.into())
+        self.send.poll_flush_unpin(cx).map_err(|_| self.get_error())
     }
 
     fn poll_close(
@@ -120,7 +109,7 @@ impl Sink<RecordBatch> for FlightPublisher {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
         if futures::ready!(self.send.poll_close_unpin(cx)).is_err() {
-            return Poll::Ready(Err(crate::ClientError::TopicClosed.into()));
+            return Poll::Ready(Err(self.get_error()));
         }
         if !self.stop.is_aborted() {
             self.stop.abort();

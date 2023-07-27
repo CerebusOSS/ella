@@ -6,6 +6,7 @@ authors.workspace = true
 
 [dependencies]
 datafusion = { workspace = true }
+datafusion-proto = { workspace = true }
 arrow-schema = { workspace = true }
 thiserror = { workspace = true }
 synapse-common = { workspace = true }
@@ -25,6 +26,7 @@ dashmap = { workspace = true }
 strum = { workspace = true }
 url = { workspace = true }
 flume = { workspace = true }
+rand = { workspace = true }
 
 prometheus-client = { workspace = true, optional = true }
 hyper = { workspace = true, optional = true }
