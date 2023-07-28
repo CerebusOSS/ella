@@ -6,7 +6,7 @@ pub use state::EllaState;
 
 use std::{fmt::Debug, sync::Arc};
 
-use crate::{metrics::MetricsServer, util::Maintainer};
+use crate::util::Maintainer;
 
 #[derive(Debug)]
 pub struct Engine {
@@ -24,7 +24,7 @@ impl Engine {
         #[cfg(feature = "metrics")]
         let metrics = config
             .serve_metrics()
-            .map(|addr| MetricsServer::start(*addr));
+            .map(|addr| crate::metrics::MetricsServer::start(*addr));
         Ok(Self {
             state,
             maintainer,

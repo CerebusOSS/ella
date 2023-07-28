@@ -24,6 +24,7 @@ tokio = { workspace = true, features = ["full"] }
 tracing-subscriber = "0.3.17"
 
 [features]
-default = ["derive"]
+default = ["derive", "metrics"]
 derive = ["ella-derive"]
+metrics = ["ella-engine/metrics"]
 pyo3 = ["ella-engine/pyo3", "ella-tensor/pyo3", "ella-common/pyo3"]

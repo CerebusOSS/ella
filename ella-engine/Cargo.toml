@@ -32,7 +32,11 @@ flume = { workspace = true }
 rand = { workspace = true }
 
 prometheus-client = { workspace = true, optional = true }
-hyper = { workspace = true, optional = true }
+hyper = { workspace = true, optional = true, features = [
+    "server",
+    "http2",
+    "tcp",
+] }
 
 num-traits = "0.2.15"
 tokio-stream = { version = "0.1.12", features = ["sync"] }
