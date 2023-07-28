@@ -11,20 +11,20 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Dexter Duckworth <dexterduck@users.noreply.github.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/BlackrockNeurotech/ella"
 
 [workspace.dependencies]
-ella-common = { path = "./ella-common", version = "0.1.0" }
-ella-tensor = { path = "./ella-tensor", version = "0.1.0" }
-ella-engine = { path = "./ella-engine", version = "0.1.0" }
-ella-server = { path = "./ella-server", version = "0.1.0" }
-ella-derive = { path = "./ella-derive", version = "0.1.0" }
-ella = { path = "./ella", version = "0.1.0" }
-pyella = { path = "./pyella", version = "0.1.0" }
+ella-common = { path = "./ella-common", version = "0.1.1" }
+ella-tensor = { path = "./ella-tensor", version = "0.1.1" }
+ella-engine = { path = "./ella-engine", version = "0.1.1" }
+ella-server = { path = "./ella-server", version = "0.1.1" }
+ella-derive = { path = "./ella-derive", version = "0.1.1" }
+ella = { path = "./ella", version = "0.1.1" }
+pyella = { path = "./pyella", version = "0.1.1" }
 
 derive_more = "0.99.17"
 serde = { version = "1.0.160", features = ["derive"] }
