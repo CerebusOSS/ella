@@ -1,5 +1,5 @@
 scrape_configs:
-  - job_name: "synapse"
+  - job_name: "ella"
     scrape_interval: 10ms
     static_configs:
       - targets: ["host.docker.internal:8888"]

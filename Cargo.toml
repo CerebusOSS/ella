@@ -1,12 +1,12 @@
 [workspace]
 members = [
-    "synapse-common",
-    "synapse-tensor",
-    "synapse-engine",
-    "synapse-server",
-    "synapse-derive",
-    "synapse",
-    "pysynapse",
+    "ella-common",
+    "ella-tensor",
+    "ella-engine",
+    "ella-server",
+    "ella-derive",
+    "ella",
+    "pyella",
 ]
 resolver = "2"
 
@@ -17,13 +17,13 @@ authors = ["Dexter Duckworth <dexterduck@users.noreply.github.com>"]
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-synapse-common = { path = "./synapse-common" }
-synapse-tensor = { path = "./synapse-tensor" }
-synapse-engine = { path = "./synapse-engine" }
-synapse-server = { path = "./synapse-server" }
-synapse-derive = { path = "./synapse-derive" }
-synapse = { path = "./synapse" }
-pysynapse = { path = "./pysynapse" }
+ella-common = { path = "./ella-common" }
+ella-tensor = { path = "./ella-tensor" }
+ella-engine = { path = "./ella-engine" }
+ella-server = { path = "./ella-server" }
+ella-derive = { path = "./ella-derive" }
+ella = { path = "./ella" }
+pyella = { path = "./pyella" }
 
 derive_more = "0.99.17"
 serde = { version = "1.0.160", features = ["derive"] }

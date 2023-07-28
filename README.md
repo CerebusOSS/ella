@@ -1,21 +1,21 @@
-# synapse
+# ella: Embedded Low-Latency dAtastore
 
-**Synapse is in extremely early development. There is very little documentation and many parts of it do not work. Expect that any part of the API may change in the future.**
+**ella is in extremely early development. There is very little documentation and many parts of it do not work. Expect that any part of the API may change in the future.**
 
-Synapse is a streaming time-series datastore designed for:
+ella is a streaming time-series datastore designed for:
 
 - Low (<1 ms) end-to-end latency.
 - First-class multidimensional tensor support.
 - Hybrid embedded/client-server deployment.
 
-Synapse is **not**:
+ella is **not**:
 
 - An ACID database.
 - A replacement for Delta Lake, Snowflake, or any other cloud data service.
 
 ## Use Cases
 
-The goal of Synapse is to simplify the storage and analysis of data in systems that require low-latency data access.
+The goal of ella is to simplify the storage and analysis of data in systems that require low-latency data access.
 
 A typical workflow for such a system might be something like:
 1. Data is ingested from sensors.
@@ -42,7 +42,7 @@ flowchart LR
     api2 <-.-> store
 ```
 
-In contrast, Synapse provides a unified API for both streaming and batch processing:
+In contrast, ella provides a unified API for both streaming and batch processing:
 
 ```mermaid
 ---
@@ -53,7 +53,7 @@ flowchart LR
     sub1[Streaming Consumer]
     sub2[Batch Consumer]
 
-    subgraph synapse[Synapse]
+    subgraph ella[ella]
         direction TB
         table1[[Table]]
         store[(Storage)]
@@ -83,13 +83,13 @@ SELECT time,x,y FROM sensor WHERE time < now()
 ## Concepts
 ### Tables
 
-Data in Synapse is grouped into *tables*. Each table is either a *topic* or a *view*.
+Data in ella is grouped into *tables*. Each table is either a *topic* or a *view*.
 
 - **Topics:** collect rows of data written by publishers. Topics are stored to disk by default, but *temporary* topics are not.
 - **Views:** return the result of specific queries. By default a view is re-computed each time it's scanned, but views can also be *materialized* to disk. Views are read-only.
 
 ### Organization
 
-Synapse follows the *Catalog → Schema → Table* organizational model.
+ella follows the *Catalog → Schema → Table* organizational model.
 
-The default catalog is `"synapse"` and the default schema is `"public"`.
+The default catalog is `"ella"` and the default schema is `"public"`.

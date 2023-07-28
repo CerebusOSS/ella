@@ -1,0 +1,10 @@
+[project]
+name = "ella"
+
+[build-system]
+requires = ["maturin>=0.14,<0.15"]
+build-backend = "maturin"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "ella._internal"
