@@ -15,7 +15,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Dexter Duckworth <dexterduck@users.noreply.github.com>"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/BlackrockNeurotech/synapse"
+repository = "https://github.com/BlackrockNeurotech/ella"
 
 [workspace.dependencies]
 ella-common = { path = "./ella-common", version = "0.1.0" }
