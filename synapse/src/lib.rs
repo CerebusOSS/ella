@@ -10,7 +10,9 @@ pub mod shape {
 }
 
 pub mod tensor {
-    pub use synapse_tensor::{frame, tensor, Tensor, Tensor1, Tensor2, Tensor3, Tensor4, TensorD};
+    pub use synapse_tensor::{
+        frame, tensor, DataFrame, Tensor, Tensor1, Tensor2, Tensor3, Tensor4, TensorD,
+    };
 }
 
 pub use engine::config::{self, SynapseConfig};

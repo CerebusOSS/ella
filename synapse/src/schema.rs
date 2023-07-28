@@ -31,6 +31,15 @@ impl<'a> GetSchema<'a> {
             create: false,
         }
     }
+
+    pub fn drop(self) -> DropSchema<'a> {
+        DropSchema {
+            inner: self.inner,
+            schema: self.schema,
+            if_exists: false,
+            cascade: false,
+        }
+    }
 }
 
 #[must_use]
@@ -69,6 +78,44 @@ impl<'a> IntoFuture for UseSchema<'a> {
                 this.create_schema(self.schema.clone(), true).await?;
             }
             this.use_schema(self.schema.schema).await
+        }
+        .boxed()
+    }
+}
+
+#[must_use]
+#[derive(Debug)]
+pub struct DropSchema<'a> {
+    inner: &'a Synapse,
+    schema: SchemaRef<'a>,
+    if_exists: bool,
+    cascade: bool,
+}
+
+impl<'a> DropSchema<'a> {
+    pub fn if_exists(mut self) -> Self {
+        self.if_exists = true;
+        self
+    }
+
+    pub fn cascade(mut self) -> Self {
+        self.cascade = true;
+        self
+    }
+}
+
+impl<'a> IntoFuture for DropSchema<'a> {
+    type Output = crate::Result<&'a Synapse>;
+    type IntoFuture = BoxFuture<'a, Self::Output>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        async move {
+            let if_exists = if self.if_exists { "IF EXISTS " } else { "" };
+            let cascade = if self.cascade { " CASCADE" } else { "" };
+            self.inner
+                .execute(format!("DROP SCHEMA {if_exists}{}{cascade}", self.schema))
+                .await?;
+            Ok(self.inner)
         }
         .boxed()
     }

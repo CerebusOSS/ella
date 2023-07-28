@@ -1,18 +1,17 @@
 mod data_types;
 mod dataframe;
-mod engine;
 mod lazy;
 mod synapse;
-mod topic;
+mod table;
+mod utils;
 
-use futures::Future;
-use once_cell::sync::OnceCell;
 use pyo3::prelude::*;
 
-pub use self::synapse::{connect, start, PySynapse};
+pub use self::synapse::{connect, open, PySynapse};
 pub use ::synapse::{Error, Result};
-pub use engine::PyEngineConfig;
-pub use topic::{PyPublisher, PyTopic};
+
+pub(crate) use data_types::unwrap_dtype;
+pub(crate) use table::{column, topic};
 
 #[cfg(feature = "mimalloc")]
 #[global_allocator]
@@ -21,28 +20,15 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[pymodule]
 #[pyo3(name = "_internal")]
 fn pysynapse(py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<PyEngineConfig>()?;
-    m.add_class::<PyTopic>()?;
-    m.add_class::<PyPublisher>()?;
+    m.add("runtime", utils::TokioRuntime::new())?;
+
     m.add_class::<PySynapse>()?;
 
-    m.add_function(wrap_pyfunction!(start, m)?)?;
+    m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_function(wrap_pyfunction!(connect, m)?)?;
+    m.add_function(wrap_pyfunction!(column, m)?)?;
+    m.add_function(wrap_pyfunction!(topic, m)?)?;
 
     data_types::add_module(py, m)?;
     Ok(())
-}
-
-pub(crate) fn tokio_runtime() -> &'static tokio::runtime::Runtime {
-    static INSTANCE: OnceCell<tokio::runtime::Runtime> = OnceCell::new();
-
-    INSTANCE.get_or_init(|| tokio::runtime::Runtime::new().unwrap())
-}
-
-pub(crate) fn wait_for_future<F: Future>(py: Python, f: F) -> F::Output
-where
-    F: Send,
-    F::Output: Send,
-{
-    py.allow_threads(|| tokio_runtime().block_on(f))
 }

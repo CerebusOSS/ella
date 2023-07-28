@@ -1,7 +1,10 @@
 mod backend;
 mod publisher;
 
-use std::{fmt::Debug, sync::Arc};
+use std::{
+    fmt::Debug,
+    sync::{Arc, Mutex},
+};
 
 use arrow_flight::{
     error::FlightError,
@@ -33,6 +36,7 @@ pub use self::publisher::FlightPublisher;
 pub struct SynapseClient {
     flight: FlightSqlServiceClient<Channel>,
     engine: EngineServiceClient<InterceptedService<Channel, BearerAuth>>,
+    config: Arc<Mutex<SynapseConfig>>,
 }
 
 impl SynapseClient {
@@ -44,8 +48,21 @@ impl SynapseClient {
         flight.set_token(token.clone());
 
         let auth = BearerAuth::try_new(&token)?;
-        let engine = EngineServiceClient::with_interceptor(channel, auth);
-        Ok(Self { flight, engine })
+        let mut engine = EngineServiceClient::with_interceptor(channel, auth);
+
+        let resp = engine
+            .get_config(gen::GetConfigReq {
+                scope: gen::ConfigScope::Connection.into(),
+            })
+            .await
+            .map_err(crate::ClientError::Server)?;
+        let config = serde_json::from_slice(&resp.into_inner().config)?;
+        let config = Arc::new(Mutex::new(config));
+        Ok(Self {
+            flight,
+            engine,
+            config,
+        })
     }
 
     pub async fn create_table(
@@ -100,8 +117,10 @@ impl SynapseClient {
         })
     }
 
-    pub async fn query<S: Into<String>>(&mut self, query: S) -> crate::Result<Lazy> {
-        let info = self.flight.execute(query.into(), None).await?;
+    pub async fn query<S: Into<String>>(&self, query: S) -> crate::Result<Lazy> {
+        let mut this = self.clone();
+
+        let info = this.flight.execute(query.into(), None).await?;
         let ticket = match info.endpoint.len() {
             0 => Err(crate::ClientError::MissingEndpoint),
             1 => info.endpoint[0]
@@ -122,64 +141,49 @@ impl SynapseClient {
             }
         };
         let plan = Plan::from_bytes(&raw_plan)?;
-        Ok(Lazy::new(plan, Arc::new(RemoteBackend::from(self.clone()))))
+        Ok(Lazy::new(plan, Arc::new(RemoteBackend::from(this))))
     }
 
-    pub async fn set_config(&mut self, config: &SynapseConfig, global: bool) -> crate::Result<()> {
-        let scope = if global {
+    pub fn config(&self) -> SynapseConfig {
+        self.config.lock().unwrap().clone()
+    }
+
+    pub async fn set_config(&mut self, config: SynapseConfig, persist: bool) -> crate::Result<()> {
+        let scope = if persist {
             gen::ConfigScope::Cluster
         } else {
             gen::ConfigScope::Connection
         };
+        let raw_config = serde_json::to_vec(&config)?;
+        *self.config.lock().unwrap() = config;
+
         self.engine
             .set_config(gen::Config {
                 scope: scope.into(),
-                config: serde_json::to_vec(config)?,
+                config: raw_config,
             })
             .await
             .map_err(crate::ClientError::Server)?;
         Ok(())
     }
 
-    pub async fn get_config(&mut self, global: bool) -> crate::Result<SynapseConfig> {
-        let scope = if global {
-            gen::ConfigScope::Cluster
-        } else {
-            gen::ConfigScope::Connection
-        };
-        let resp = self
-            .engine
-            .get_config(gen::GetConfigReq {
-                scope: scope.into(),
-            })
-            .await
-            .map_err(crate::ClientError::Server)?;
-        Ok(serde_json::from_slice(&resp.into_inner().config)?)
-    }
-
     pub async fn use_catalog<'a>(&mut self, catalog: impl Into<Id<'a>>) -> crate::Result<()> {
         let catalog: Id<'static> = catalog.into().into_owned();
-
         let config = self
-            .get_config(false)
-            .await?
+            .config()
             .into_builder()
             .default_catalog(catalog)
             .build();
-        self.set_config(&config, false).await?;
+        self.set_config(config, false).await?;
+
         Ok(())
     }
 
     pub async fn use_schema<'a>(&mut self, schema: impl Into<Id<'a>>) -> crate::Result<()> {
         let schema: Id<'static> = schema.into().into_owned();
+        let config = self.config().into_builder().default_schema(schema).build();
+        self.set_config(config, false).await?;
 
-        let config = self
-            .get_config(false)
-            .await?
-            .into_builder()
-            .default_schema(schema)
-            .build();
-        self.set_config(&config, false).await?;
         Ok(())
     }
 

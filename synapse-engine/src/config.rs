@@ -5,6 +5,7 @@ use synapse_common::Duration;
 use crate::{registry::Id, TableConfig};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct SynapseConfig {
     engine_config: EngineConfig,
     table_config: TableConfig,
@@ -79,6 +80,7 @@ impl SynapseConfigBuilder {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct EngineConfig {
     serve_metrics: Option<SocketAddr>,
     maintenance_interval: Duration,

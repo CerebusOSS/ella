@@ -6,7 +6,7 @@ use std::{future::IntoFuture, sync::Arc};
 
 use futures::{future::BoxFuture, FutureExt};
 use synapse_engine::{
-    registry::TableRef,
+    registry::{TableId, TableRef},
     table::{info::TableInfo, SynapseTable},
 };
 use synapse_server::table::RemoteTable;
@@ -47,6 +47,22 @@ impl Table {
             Remote(table) => Publisher::new(table.publish(), table.arrow_schema()?),
         })
     }
+
+    pub fn id(&self) -> &TableId<'static> {
+        use TableInner::*;
+        match &self.inner {
+            Local(table) => table.id(),
+            Remote(table) => table.id(),
+        }
+    }
+
+    pub fn info(&self) -> TableInfo {
+        use TableInner::*;
+        match &self.inner {
+            Local(table) => table.info(),
+            Remote(table) => table.info(),
+        }
+    }
 }
 
 #[must_use]
@@ -75,6 +91,14 @@ impl<'a> GetTable<'a> {
             table: self.table,
             info: info.into(),
         })
+    }
+
+    pub fn drop(self) -> DropTable<'a> {
+        DropTable {
+            inner: self.inner,
+            table: self.table,
+            if_exists: false,
+        }
     }
 }
 
@@ -164,6 +188,38 @@ impl<'a> IntoFuture for CreateOrReplaceTable<'a> {
                 .inner
                 .create_table(self.0.table, self.0.info, false, true)
                 .await
+        }
+        .boxed()
+    }
+}
+
+#[must_use]
+#[derive(Debug)]
+pub struct DropTable<'a> {
+    inner: &'a Synapse,
+    table: TableRef<'a>,
+    if_exists: bool,
+}
+
+impl<'a> DropTable<'a> {
+    pub fn if_exists(mut self) -> Self {
+        self.if_exists = true;
+        self
+    }
+}
+
+impl<'a> IntoFuture for DropTable<'a> {
+    type Output = crate::Result<&'a Synapse>;
+    type IntoFuture = BoxFuture<'a, Self::Output>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        async move {
+            let if_exists = if self.if_exists { "IF EXISTS " } else { "" };
+            self.inner
+                .execute(format!("DROP TABLE {if_exists}{}", self.table))
+                .await?;
+
+            Ok(self.inner)
         }
         .boxed()
     }

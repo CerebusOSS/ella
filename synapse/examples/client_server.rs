@@ -15,7 +15,7 @@ async fn main() -> synapse::Result<()> {
         .init();
 
     let server = tokio::spawn(async move {
-        let mut syn = synapse::open("file:///tmp/synapse/")
+        let syn = synapse::open("file:///tmp/synapse/")
             .or_create(synapse::SynapseConfig::default())
             .and_serve("localhost:50051")?
             .await?;
@@ -69,58 +69,12 @@ async fn main() -> synapse::Result<()> {
             .publish()?
             .rows(1)?;
 
-        // let mut b = syn
-        //     .topic("b")
-        //     .get_or_create(
-        //         synapse::Schema::builder()
-        //             .field("time")
-        //             .data_type(synapse::TensorType::Timestamp)
-        //             .required(true)
-        //             .index(true)
-        //             .finish()
-        //             .field("y")
-        //             .data_type(synapse::TensorType::String)
-        //             .finish()
-        //             .field("z")
-        //             .data_type(synapse::TensorType::Int32)
-        //             .finish()
-        //             .build(),
-        //     )
-        //     .await?
-        //     .publish()
-        //     .rows(1)?;
         for i in 0..10 {
             b.feed(synapse::row!("A".to_string(), i,)).await?;
         }
         b.close().await?;
         drop(b);
 
-        // let x = syn
-        //     .query("select x from a")
-        //     .await?
-        //     .col3::<f32>("x")?
-        //     .sin()
-        //     .execute()
-        //     .await?;
-        // println!("{:?}", x);
-
-        // let time = syn
-        //     .query("select time from a")
-        //     .await?
-        //     .col1::<synapse::Time>("time")?
-        //     .execute()
-        //     .await?;
-        // println!("{:?}", time);
-
-        // let mut a = syn
-        //     .query("select * from a")
-        //     .await?
-        //     .rows::<(synapse::Time, Tensor2<f32>)>()
-        //     .await?;
-        // while let Some((time, x)) = a.try_next().await? {
-        //     // println!("time={:?}, x={:?}", time, x);
-        // }
-        // drop(a);
         syn.shutdown().await?;
 
         synapse::Result::Ok(())

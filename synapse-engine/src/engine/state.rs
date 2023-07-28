@@ -118,6 +118,7 @@ impl SynapseState {
         config: &SynapseConfig,
     ) -> SessionState {
         let config = SessionConfig::new()
+            .with_information_schema(true)
             .with_create_default_catalog_and_schema(false)
             .with_default_catalog_and_schema(
                 config.default_catalog().to_string(),

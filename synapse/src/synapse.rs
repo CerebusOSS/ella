@@ -71,8 +71,9 @@ impl Synapse {
     }
 
     pub async fn shutdown(self) -> crate::Result<()> {
+        use SynapseInner::*;
         match self.inner {
-            SynapseInner::Local { ctx, server } => {
+            Local { ctx, server } => {
                 let mut lock = server.lock().await;
                 let res = if let Some(server) = lock.as_mut() {
                     server.stop().await
@@ -83,18 +84,19 @@ impl Synapse {
                 ctx.shutdown().await?;
                 res
             }
-            SynapseInner::Remote(_) => Ok(()),
+            Remote(_) => Ok(()),
         }
     }
 
-    pub async fn query(&mut self, sql: impl AsRef<str>) -> crate::Result<Lazy> {
-        match &mut self.inner {
-            SynapseInner::Local { ctx, .. } => ctx.query(sql.as_ref()).await,
-            SynapseInner::Remote(client) => client.query(sql.as_ref()).await,
+    pub async fn query(&self, sql: impl AsRef<str>) -> crate::Result<Lazy> {
+        use SynapseInner::*;
+        match &self.inner {
+            Local { ctx, .. } => ctx.query(sql.as_ref()).await,
+            Remote(client) => client.query(sql.as_ref()).await,
         }
     }
 
-    pub async fn execute(&mut self, sql: impl AsRef<str>) -> crate::Result<()> {
+    pub async fn execute(&self, sql: impl AsRef<str>) -> crate::Result<()> {
         self.query(sql).await?.execute().await?;
         Ok(())
     }
@@ -112,23 +114,33 @@ impl Synapse {
     }
 
     pub async fn use_catalog<'a>(mut self, catalog: impl Into<Id<'a>>) -> crate::Result<Self> {
+        use SynapseInner::*;
         match &mut self.inner {
-            SynapseInner::Local { ctx, .. } => {
+            Local { ctx, .. } => {
                 *ctx = ctx.clone().use_catalog(catalog)?;
             }
-            SynapseInner::Remote(client) => client.use_catalog(catalog).await?,
+            Remote(client) => client.use_catalog(catalog).await?,
         }
         Ok(self)
     }
 
     pub async fn use_schema<'a>(mut self, schema: impl Into<Id<'a>>) -> crate::Result<Self> {
+        use SynapseInner::*;
         match &mut self.inner {
-            SynapseInner::Local { ctx, .. } => {
+            Local { ctx, .. } => {
                 *ctx = ctx.clone().use_schema(schema)?;
             }
-            SynapseInner::Remote(client) => client.use_schema(schema).await?,
+            Remote(client) => client.use_schema(schema).await?,
         }
         Ok(self)
+    }
+
+    pub fn config(&self) -> SynapseConfig {
+        use SynapseInner::*;
+        match &self.inner {
+            Local { ctx, .. } => ctx.config().clone(),
+            Remote(client) => client.config(),
+        }
     }
 
     pub(crate) async fn get_table(

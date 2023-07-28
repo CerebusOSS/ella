@@ -1,10 +1,12 @@
+use std::future::IntoFuture;
+
 use futures::TryStreamExt;
 use pyo3::prelude::*;
 use synapse::engine::lazy::{Lazy, LazyStream};
 
-use crate::{dataframe::PyDataFrame, wait_for_future};
+use crate::{dataframe::PyDataFrame, utils::wait_for_future};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, derive_more::From, derive_more::Into)]
 #[pyclass(name = "Lazy")]
 pub struct PyLazy {
     inner: Lazy,
@@ -19,6 +21,11 @@ impl PyLazy {
 
     fn execute(&self, py: Python) -> crate::Result<PyDataFrame> {
         Ok(wait_for_future(py, self.inner.clone().execute())?.into())
+    }
+
+    fn create_view(&self, py: Python, table: &str) -> PyResult<Self> {
+        let plan = wait_for_future(py, self.inner.clone().create_view(table).into_future())?;
+        Ok(plan.into())
     }
 }
 

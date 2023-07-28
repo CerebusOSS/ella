@@ -404,8 +404,6 @@ index_item!(impl_const [] 7);
     Clone,
     PartialEq,
     Eq,
-    // derive_more::From,
-    // derive_more::Into,
     derive_more::IntoIterator,
     derive_more::Index,
     derive_more::IndexMut,
@@ -418,6 +416,12 @@ index_item!(impl_const [] 7);
 #[as_mut(forward)]
 #[into_iterator(owned, ref, ref_mut)]
 pub struct Dyn(pub SmallVec<[usize; 4]>);
+
+impl Dyn {
+    pub fn to_vec(&self) -> Vec<usize> {
+        self.0.to_vec()
+    }
+}
 
 impl Shape for Dyn {
     const NDIM: Option<usize> = None;

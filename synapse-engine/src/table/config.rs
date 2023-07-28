@@ -1,4 +1,5 @@
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct TableConfig {
     pub write_batch_size: usize,
     pub rw_buffer_capacity: usize,
