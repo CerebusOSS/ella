@@ -3,6 +3,7 @@ name = "pysynapse"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license.workspace = true
 
 [lib]
 name = "pysynapse"
@@ -19,6 +20,8 @@ arrow = { workspace = true, features = ["pyarrow"] }
 paste = { workspace = true }
 thiserror = { workspace = true }
 once_cell = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 mimalloc = { workspace = true, optional = true }
 
