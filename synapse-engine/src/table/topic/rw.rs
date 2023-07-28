@@ -322,8 +322,7 @@ impl TableProvider for RwBuffer {
         )?;
         if let Some(mut sort) = self.table.output_ordering() {
             if let Some(projection) = projection {
-                sort =
-                    crate::util::project_ordering(&self.table.arrow_schema(), &projection, &sort)?;
+                sort = crate::util::project_ordering(self.table.arrow_schema(), projection, &sort)?;
             }
             table = table.with_sort_information(sort);
         }

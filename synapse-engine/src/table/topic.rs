@@ -47,7 +47,7 @@ impl SynapseTopic {
         info: TopicInfo,
         state: &SynapseState,
     ) -> crate::Result<Self> {
-        let table_info = info.table_info(id, &state)?;
+        let table_info = info.table_info(id, state)?;
         let config = table_info.config().clone();
 
         let (shards, rw) = if !info.temporary() {

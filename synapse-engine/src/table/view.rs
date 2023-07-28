@@ -125,7 +125,7 @@ impl TableProvider for SynapseView {
     }
 
     fn get_logical_plan(&self) -> Option<&LogicalPlan> {
-        Some(&self.logical_plan())
+        Some(self.logical_plan())
     }
 
     async fn scan(

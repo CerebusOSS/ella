@@ -83,7 +83,7 @@ impl SynapseClient {
             .engine
             .create_table(req)
             .await
-            .map_err(|err| crate::ClientError::Server(err))?
+            .map_err(crate::ClientError::Server)?
             .into_inner();
 
         Ok(RemoteTable::new(
@@ -101,7 +101,7 @@ impl SynapseClient {
             .engine
             .get_table(gen::TableRef::from(table))
             .await
-            .map_err(|err| crate::ClientError::Server(err))?
+            .map_err(crate::ClientError::Server)?
             .into_inner();
         Ok(match (&resp.table, &resp.info) {
             (Some(table), Some(info)) => Some(RemoteTable::new(

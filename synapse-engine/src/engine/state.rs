@@ -278,7 +278,7 @@ impl SynapseState {
         }
     }
 
-    pub fn table<'a>(&self, table: TableId<'a>) -> Option<Arc<SynapseTable>> {
+    pub fn table(&self, table: TableId<'_>) -> Option<Arc<SynapseTable>> {
         self.cluster
             .catalog(table.catalog)?
             .schema(table.schema)?

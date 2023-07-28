@@ -177,7 +177,7 @@ pub(crate) fn column(
         name,
         data_type,
         required,
-        row_shape: row_shape.map(|shape| Dyn::from(shape)),
+        row_shape: row_shape.map(Dyn::from),
     }
     .into()
 }

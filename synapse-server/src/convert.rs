@@ -122,10 +122,9 @@ impl From<Column> for gen::Column {
         Self {
             name: value.name,
             data_type: gen::TensorType::from(value.data_type).into(),
-            row_shape: value.row_shape.map_or_else(
-                || Vec::new(),
-                |row| row.into_iter().map(|r| r as u32).collect(),
-            ),
+            row_shape: value
+                .row_shape
+                .map_or_else(Vec::new, |row| row.into_iter().map(|r| r as u32).collect()),
             required: value.required,
         }
     }
@@ -219,18 +218,15 @@ impl TryFrom<ViewInfo> for gen::ViewInfo {
         } else {
             None
         };
-        let index = value.index().map_or_else(
-            || Vec::new(),
-            |index| {
-                index
-                    .iter()
-                    .map(|i| gen::TableIndex {
-                        column: i.column.clone(),
-                        ascending: i.ascending,
-                    })
-                    .collect()
-            },
-        );
+        let index = value.index().map_or_else(Vec::new, |index| {
+            index
+                .iter()
+                .map(|i| gen::TableIndex {
+                    column: i.column.clone(),
+                    ascending: i.ascending,
+                })
+                .collect()
+        });
         Ok(Self {
             plan: value.plan().to_bytes(),
             definition: value.definition().map(|def| def.to_string()),

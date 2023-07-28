@@ -125,7 +125,7 @@ impl PlanInner {
         let ctx = SessionContext::new();
         let codec = RemoteExtensionCodec {};
         Ok(Self::Stub(logical_plan_from_bytes_with_extension_codec(
-            &raw, &ctx, &codec,
+            raw, &ctx, &codec,
         )?))
     }
 }
@@ -145,6 +145,6 @@ impl<'de> serde::Deserialize<'de> for PlanInner {
         D: serde::Deserializer<'de>,
     {
         let raw = <Vec<u8> as serde::Deserialize<'de>>::deserialize(deserializer)?;
-        Self::from_raw(&raw).map_err(|err| <D::Error as serde::de::Error>::custom(err))
+        Self::from_raw(&raw).map_err(<D::Error as serde::de::Error>::custom)
     }
 }

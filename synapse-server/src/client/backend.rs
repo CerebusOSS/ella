@@ -105,10 +105,11 @@ impl Stream for RemoteStream {
     ) -> Poll<Option<Self::Item>> {
         loop {
             match futures::ready!(self.inner.poll_next_unpin(cx)) {
-                Some(Ok(item)) => match item.payload {
-                    DecodedPayload::RecordBatch(batch) => return Poll::Ready(Some(Ok(batch))),
-                    _ => {}
-                },
+                Some(Ok(item)) => {
+                    if let DecodedPayload::RecordBatch(batch) = item.payload {
+                        return Poll::Ready(Some(Ok(batch)));
+                    }
+                }
                 Some(Err(error)) => {
                     return Poll::Ready(Some(Err(DataFusionError::External(Box::new(error)))))
                 }

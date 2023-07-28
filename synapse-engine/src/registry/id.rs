@@ -265,6 +265,8 @@ impl<'a> Borrow<str> for Id<'a> {
     }
 }
 
+// Have to implement Into instead of From due to trait collisions
+#[allow(clippy::from_over_into)]
 impl<'a> Into<Cow<'a, str>> for Id<'a> {
     fn into(self) -> Cow<'a, str> {
         self.0
@@ -477,9 +479,9 @@ impl<'a> From<TableId<'a>> for TableReference<'a> {
 impl<'a> From<TableId<'a>> for ResolvedTableReference<'a> {
     fn from(value: TableId<'a>) -> Self {
         ResolvedTableReference {
-            catalog: value.catalog.0.into(),
-            schema: value.schema.0.into(),
-            table: value.table.0.into(),
+            catalog: value.catalog.0,
+            schema: value.schema.0,
+            table: value.table.0,
         }
     }
 }

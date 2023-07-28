@@ -49,7 +49,7 @@ impl Lazy {
         S: Shape,
     {
         let col = datafusion::common::Column::new_unqualified(col)
-            .normalize_with_schemas_and_ambiguity_check(&[&[&self.plan.df_schema()]], &[])?;
+            .normalize_with_schemas_and_ambiguity_check(&[&[self.plan.df_schema()]], &[])?;
         let expr = Expr::Column(col);
 
         Ok(Column {

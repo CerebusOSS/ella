@@ -153,7 +153,7 @@ pub(crate) fn array_to_column(field: &Field, array: ArrayRef) -> crate::Result<C
                 if tensor.permutation.is_some() {
                     unimplemented!();
                 }
-                tensor.row_shape.clone()
+                tensor.row_shape
             } else {
                 Dyn::from([*row_size as usize])
             };

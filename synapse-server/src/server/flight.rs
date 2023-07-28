@@ -363,10 +363,7 @@ impl FlightSqlService for SynapseSqlService {
 
         for catalog in state.cluster().catalogs() {
             for schema in catalog.schemas() {
-                builder.append(
-                    schema.id().catalog.to_string(),
-                    schema.id().schema.to_string(),
-                );
+                builder.append(&schema.id().catalog, &schema.id().schema);
             }
         }
 
@@ -393,9 +390,9 @@ impl FlightSqlService for SynapseSqlService {
                     let id = table.id();
                     builder
                         .append(
-                            id.catalog.to_string(),
-                            id.schema.to_string(),
-                            id.table.to_string(),
+                            &id.catalog,
+                            &id.schema,
+                            &id.table,
                             table.kind(),
                             &table.schema(),
                         )

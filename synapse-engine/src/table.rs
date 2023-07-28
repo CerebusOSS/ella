@@ -124,7 +124,7 @@ impl SynapseTable {
     }
 
     pub fn load(table: &TableState, state: &SynapseState) -> crate::Result<Self> {
-        Self::new(table.id.clone(), table.info.clone(), &state, false)
+        Self::new(table.id.clone(), table.info.clone(), state, false)
     }
 
     pub(crate) fn transaction(&self) -> CreateTable {

@@ -149,7 +149,7 @@ pub(crate) fn project_ordering(
     projection: &[usize],
     ordering: &[PhysicalSortExpr],
 ) -> Result<Vec<PhysicalSortExpr>, DataFusionError> {
-    let projected = schema.project(&projection)?;
+    let projected = schema.project(projection)?;
     let mut out = Vec::with_capacity(ordering.len());
     for PhysicalSortExpr { expr, options } in ordering {
         if let Some(col) = expr.as_any().downcast_ref::<Column>() {

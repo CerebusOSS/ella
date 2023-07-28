@@ -199,9 +199,9 @@ impl ViewBuilder {
 
     pub fn index(mut self, col: impl Into<String>, ascending: bool) -> crate::Result<Self> {
         if !self.materialized {
-            return Err(crate::EngineError::InvalidIndex(format!(
-                "cannot create index on non-materialized view"
-            ))
+            return Err(crate::EngineError::InvalidIndex(
+                "cannot create index on non-materialized view".to_string(),
+            )
             .into());
         }
 
@@ -348,8 +348,8 @@ pub struct TopicBuilder {
     append_time: bool,
 }
 
-impl TopicBuilder {
-    pub fn new() -> Self {
+impl Default for TopicBuilder {
+    fn default() -> Self {
         Self {
             columns: Vec::new(),
             index: Vec::new(),
@@ -358,6 +358,12 @@ impl TopicBuilder {
             config: None,
             append_time: true,
         }
+    }
+}
+
+impl TopicBuilder {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn temporary(mut self) -> Self {
