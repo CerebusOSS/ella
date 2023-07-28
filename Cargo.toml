@@ -17,13 +17,13 @@ authors = ["Dexter Duckworth <dexterduck@users.noreply.github.com>"]
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-ella-common = { path = "./ella-common" }
-ella-tensor = { path = "./ella-tensor" }
-ella-engine = { path = "./ella-engine" }
-ella-server = { path = "./ella-server" }
-ella-derive = { path = "./ella-derive" }
-ella = { path = "./ella" }
-pyella = { path = "./pyella" }
+ella-common = { path = "./ella-common", version = "0.1.0" }
+ella-tensor = { path = "./ella-tensor", version = "0.1.0" }
+ella-engine = { path = "./ella-engine", version = "0.1.0" }
+ella-server = { path = "./ella-server", version = "0.1.0" }
+ella-derive = { path = "./ella-derive", version = "0.1.0" }
+ella = { path = "./ella", version = "0.1.0" }
+pyella = { path = "./pyella", version = "0.1.0" }
 
 derive_more = "0.99.17"
 serde = { version = "1.0.160", features = ["derive"] }
