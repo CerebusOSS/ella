@@ -28,3 +28,7 @@ default = ["derive", "metrics"]
 derive = ["ella-derive"]
 metrics = ["ella-engine/metrics"]
 pyo3 = ["ella-engine/pyo3", "ella-tensor/pyo3", "ella-common/pyo3"]
+
+[package.metadata.docs.rs]
+rustc-args = ["--cfg", "uuid_unstable"]
+rustdoc-args = ["--cfg", "uuid_unstable"]
