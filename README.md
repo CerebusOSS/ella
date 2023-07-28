@@ -1,5 +1,12 @@
 # ella: Embedded Low-Latency dAtastore
 
+[![Crates.io](https://img.shields.io/crates/v/ella?style=for-the-badge)](https://crates.io/crates/ella/)
+[![docs.rs](https://img.shields.io/docsrs/ella?style=for-the-badge)]()
+![Crates.io](https://img.shields.io/crates/l/ella?style=for-the-badge)
+
+
+
+
 **ella is in extremely early development. There is very little documentation and many parts of it do not work. Expect that any part of the API may change in the future.**
 
 ella is a streaming time-series datastore designed for:
