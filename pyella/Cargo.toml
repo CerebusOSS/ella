@@ -6,7 +6,6 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Python bindings for the ella datastore."
-publish = false
 
 [lib]
 name = "pyella"
