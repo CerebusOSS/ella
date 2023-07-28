@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "A streaming time-series datastore for low-latency applications."
 
 [dependencies]
 ella-tensor = { workspace = true }

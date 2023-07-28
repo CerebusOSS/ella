@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "Shared types and traits for the ella datastore."
 
 [dependencies]
 time = { workspace = true }
