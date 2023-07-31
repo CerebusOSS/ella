@@ -19,7 +19,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/BlackrockNeurotech/ella"
 
 [workspace.metadata.release]
-disable-tag = true
+tag = false
 
 [workspace.dependencies]
 ella-common = { path = "./ella-common", version = "0.1.1" }

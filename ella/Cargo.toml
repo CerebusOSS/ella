@@ -35,4 +35,4 @@ rustc-args = ["--cfg", "uuid_unstable"]
 rustdoc-args = ["--cfg", "uuid_unstable"]
 
 [package.metadata.release]
-disable-tag = true
+tag = true
