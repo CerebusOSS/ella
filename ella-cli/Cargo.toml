@@ -1,0 +1,29 @@
+[package]
+name = "ella-cli"
+version = "0.1.1"
+edition = "2021"
+authors = ["Dexter Duckworth <dexterduck@users.noreply.github.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/BlackrockNeurotech/ella"
+description = "CLI tools for working with ella datastores."
+
+[[bin]]
+name = "ella"
+path = "src/main.rs"
+
+[dependencies]
+ella = { path = "../ella", version = "0.1.1" }
+
+anyhow = "1.0.72"
+tracing = "0.1.37"
+tracing-subscriber = "0.3.17"
+futures = "0.3.28"
+tokio = { version = "1.27.0", features = ["full"] }
+mimalloc = { version = "0.1.37", default-features = false }
+clap = { version = "4.3.19", features = ["derive"] }
+dialoguer = { version = "0.10.4", features = ["history"] }
+shlex = "1.1.0"
+
+[package.metadata.docs.rs]
+rustc-args = ["--cfg", "uuid_unstable"]
+rustdoc-args = ["--cfg", "uuid_unstable"]

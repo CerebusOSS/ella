@@ -1,16 +1,15 @@
 mod data;
-mod fmt;
+pub mod fmt;
 mod iter;
 
-use std::sync::Arc;
-
-use arrow::array::{make_array, Array, ArrayData, ArrayRef, FixedSizeListArray};
 pub use data::TensorData;
-use ella_common::array::flatten;
 pub(crate) use iter::ShapedIter;
 pub use iter::TensorIter;
 
 use crate::{Column, Const, Dyn, Mask, Shape, TensorValue};
+use arrow::array::{make_array, Array, ArrayData, ArrayRef, FixedSizeListArray};
+use ella_common::array::flatten;
+use std::sync::Arc;
 
 pub type Tensor1<T> = Tensor<T, Const<1>>;
 pub type Tensor2<T> = Tensor<T, Const<2>>;

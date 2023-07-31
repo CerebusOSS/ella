@@ -148,6 +148,14 @@ impl EllaClient {
         self.config.lock().unwrap().clone()
     }
 
+    pub fn default_catalog(&self) -> Id<'static> {
+        self.config.lock().unwrap().default_catalog.clone()
+    }
+
+    pub fn default_schema(&self) -> Id<'static> {
+        self.config.lock().unwrap().default_schema.clone()
+    }
+
     pub async fn set_config(&mut self, config: EllaConfig, persist: bool) -> crate::Result<()> {
         let scope = if persist {
             gen::ConfigScope::Cluster

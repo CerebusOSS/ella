@@ -14,4 +14,10 @@ fn main() {
     let s2 = tensor::tensor![Some("A".to_string()), None, Some("B".to_string())];
     println!("{:?}", s1);
     println!("{:?}", s1.eq(s2));
+
+    let df = tensor::frame!(
+        x = Tensor::linspace(0_f32, 10., 100).cos().reshape((10, 10)),
+        y = Tensor::linspace(0_f32, 10., 10).sin(),
+    );
+    println!("{}", df.pretty_print());
 }

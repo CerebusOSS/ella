@@ -14,7 +14,7 @@ pub trait TensorValue: Debug + Clone + PartialEq + PartialOrd + Send + Sync + 's
     /// Masked value type. For `Option<T>` this is `Option<T>`.
     /// For all other `T` this should be `Option<T>`.
     type Masked: TensorValue<Array = Self::Array>;
-    /// Unmasked value type. For Option<T> shis is `T`. For all other `T` this should be `T`.
+    /// Unmasked value type. For `Option<T>` this is `T`. For all other `T` this should be `T`.
     type Unmasked: TensorValue<Array = Self::Array>;
 
     const TENSOR_TYPE: TensorType;
@@ -84,7 +84,7 @@ pub trait TensorValue: Debug + Clone + PartialEq + PartialOrd + Send + Sync + 's
     ///
     /// Panics if `offset + length` > `array.len()`.
     fn slice(array: &Self::Array, offset: usize, length: usize) -> Self::Array;
-    /// Constructs an array from [`ArrowData`].
+    /// Constructs an array from [`ArrayData`].
     ///
     /// Panics if `data` is not convertable to [`Self::Array`].
     fn from_array_data(data: ArrayData) -> Self::Array;

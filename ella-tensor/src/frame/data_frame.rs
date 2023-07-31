@@ -1,11 +1,11 @@
-use std::{ops::Deref, sync::Arc};
+use std::{fmt::Display, ops::Deref, sync::Arc};
 
 use arrow::record_batch::RecordBatch;
 use ella_common::row::RowFormat;
 
 use crate::{NamedColumn, Shape, Tensor, TensorValue};
 
-use super::{batch_to_columns, frame_to_batch, Frame};
+use super::{batch_to_columns, frame_to_batch, print::print_frames, Frame};
 
 #[derive(Debug, Clone)]
 pub struct DataFrame {
@@ -14,10 +14,6 @@ pub struct DataFrame {
 }
 
 impl DataFrame {
-    pub fn nrows(&self) -> usize {
-        self.rows
-    }
-
     pub fn col<T, S>(&self, name: &str) -> crate::Result<Tensor<T, S>>
     where
         T: TensorValue,
@@ -43,11 +39,19 @@ impl DataFrame {
         let batch = RecordBatch::from(self.clone());
         R::view(batch.num_rows(), &batch.schema().fields, batch.columns())
     }
+
+    pub fn pretty_print(&self) -> impl Display + '_ {
+        print_frames(&[self])
+    }
 }
 
 impl Frame for DataFrame {
     fn ncols(&self) -> usize {
         self.columns.len()
+    }
+
+    fn nrows(&self) -> usize {
+        self.rows
     }
 
     fn column(&self, i: usize) -> &NamedColumn {

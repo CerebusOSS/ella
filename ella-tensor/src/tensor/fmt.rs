@@ -62,3 +62,39 @@ where
     };
     Ok(())
 }
+
+pub trait RowDisplay {
+    fn write(&self, idx: usize, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+    fn value(&self, idx: usize) -> RowValue<'_>;
+}
+
+impl<T, S> RowDisplay for Tensor<T, S>
+where
+    T: TensorValue,
+    S: Shape,
+{
+    fn write(&self, idx: usize, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.ndim() == 0 {
+            todo!()
+        } else {
+            let row = self.as_dyn().index_axis(Axis(0), idx);
+            let ndim = row.ndim();
+            fmt_tensor(row, f, |v, f| v.format(f), 0, ndim)
+        }
+    }
+
+    fn value(&self, idx: usize) -> RowValue<'_> {
+        RowValue { idx, display: self }
+    }
+}
+
+pub struct RowValue<'a> {
+    idx: usize,
+    display: &'a dyn RowDisplay,
+}
+
+impl<'a> fmt::Display for RowValue<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.display.write(self.idx, f)
+    }
+}

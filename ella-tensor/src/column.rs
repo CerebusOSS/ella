@@ -5,7 +5,11 @@ use arrow::{
     datatypes::{DataType, Field},
 };
 
-use crate::{arrow::ExtensionType, Axis, Dyn, RemoveAxis, Shape, Tensor, TensorType, TensorValue};
+use crate::{
+    arrow::ExtensionType,
+    tensor::fmt::{RowDisplay, RowValue},
+    Axis, Dyn, RemoveAxis, Shape, Tensor, TensorType, TensorValue,
+};
 use ella_common::{Duration, Time};
 
 pub type ColumnRef = Arc<dyn Column + 'static>;
@@ -91,6 +95,9 @@ pub trait Column: Debug + Send + Sync {
             None
         }
     }
+
+    #[doc(hidden)]
+    fn format_row(&self, idx: usize) -> RowValue<'_>;
 }
 
 impl<T, S> Column for Tensor<T, S>
@@ -120,6 +127,10 @@ where
 
     fn data(&self) -> ArrayData {
         self.values().values().to_data()
+    }
+
+    fn format_row(&self, idx: usize) -> RowValue<'_> {
+        self.value(idx)
     }
 }
 

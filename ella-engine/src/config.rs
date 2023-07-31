@@ -7,10 +7,10 @@ use crate::{registry::Id, TableConfig};
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct EllaConfig {
-    engine_config: EngineConfig,
-    table_config: TableConfig,
-    default_catalog: Id<'static>,
-    default_schema: Id<'static>,
+    pub engine_config: EngineConfig,
+    pub table_config: TableConfig,
+    pub default_catalog: Id<'static>,
+    pub default_schema: Id<'static>,
 }
 
 impl Default for EllaConfig {

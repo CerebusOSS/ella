@@ -1,20 +1,36 @@
 mod data_frame;
+mod print;
 
-use std::sync::Arc;
-
-use arrow::{datatypes::Schema, record_batch::RecordBatch};
 pub use data_frame::DataFrame;
+pub use print::print_frames;
 
 use crate::{column::array_to_column, tensor_schema, NamedColumn};
+use arrow::{datatypes::Schema, record_batch::RecordBatch};
+use std::sync::Arc;
 
 pub trait Frame {
     fn ncols(&self) -> usize;
+    fn nrows(&self) -> usize;
     fn column(&self, i: usize) -> &NamedColumn;
     fn columns(&self) -> FrameColIter<'_, Self> {
         FrameColIter {
             frame: self,
             index: 0,
         }
+    }
+}
+
+impl<'a, F: Frame> Frame for &'a F {
+    fn ncols(&self) -> usize {
+        (*self).ncols()
+    }
+
+    fn nrows(&self) -> usize {
+        (*self).nrows()
+    }
+
+    fn column(&self, i: usize) -> &NamedColumn {
+        (*self).column(i)
     }
 }
 
@@ -75,7 +91,7 @@ macro_rules! frame {
         $crate::DataFrame::new()
     };
     ($($($name:tt).+ = $col:expr),+ $(,)?) => {
-        [$($crate::NamedColumn::new(stringify!($($name).+), std::sync::Arc::new($col) as $crate::ColumnRef)),+]
+        [$($crate::NamedColumn::new(stringify!($($name).+).to_string(), std::sync::Arc::new($col) as $crate::ColumnRef)),+]
             .into_iter()
             .collect::<$crate::DataFrame>()
     };
