@@ -9,7 +9,7 @@ use datafusion::{
     sql::{ResolvedTableReference, TableReference},
 };
 use rand::Fill;
-use uuid::{Builder, NoContext, Timestamp, Uuid};
+use uuid::{NoContext, Timestamp, Uuid};
 
 use crate::Path;
 
@@ -527,7 +527,7 @@ macro_rules! impl_uuid_newtype {
         #[allow(clippy::new_without_default)]
         impl $t {
             pub fn new() -> Self {
-                Self(new_uuid())
+                Self(new_uuid_now())
             }
 
             impl_uuid_newtype!(@encode $t $($prefix)?);
@@ -554,9 +554,8 @@ impl_uuid_newtype!(
 
 impl ShardId {
     pub(crate) fn generate_from(id: &Self) -> Self {
-        Self(Uuid::new_v7(
-            id.0.get_timestamp().expect("expected v7 UUID"),
-        ))
+        let millis = decode_timestamp_millis(&id.0);
+        Self(new_uuid(millis))
     }
 }
 
@@ -571,15 +570,55 @@ fn encode_uuid_to_path(uuid: Uuid, root: &Path, prefix: Option<&str>, ext: &str)
     root.join(&file)
 }
 
-fn new_uuid() -> Uuid {
+// TODO: replace UUID logic once v7 is stabilized
+// See: [BlackrockNeurotech/ella#11](https://github.com/BlackrockNeurotech/ella/issues/11)
+// Current implementation is taken from here: https://github.com/uuid-rs/uuid/blob/main/src/timestamp.rs
+
+fn new_uuid_now() -> Uuid {
+    let ts = Timestamp::now(NoContext);
+    let (secs, nanos) = ts.to_unix();
+    let millis = (secs * 1000).saturating_add(nanos as u64 / 1_000_000);
+
+    new_uuid(millis)
+}
+
+fn new_uuid(millis: u64) -> Uuid {
     static COUNTER: AtomicU16 = AtomicU16::new(0);
 
     let counter = COUNTER.fetch_add(1, Ordering::SeqCst);
     let mut bytes = [0u8; 10];
     bytes[..2].copy_from_slice(&counter.to_be_bytes());
     bytes[2..].try_fill(&mut rand::thread_rng()).unwrap();
-    let ts = Timestamp::now(NoContext);
-    let (secs, nanos) = ts.to_unix();
-    let millis = (secs * 1000).saturating_add(nanos as u64 / 1_000_000);
-    Builder::from_unix_timestamp_millis(millis, &bytes).into_uuid()
+
+    encode_timestamp_millis(millis, &bytes)
+}
+
+fn encode_timestamp_millis(millis: u64, bytes: &[u8; 10]) -> Uuid {
+    let millis_high = ((millis >> 16) & 0xFFFF_FFFF) as u32;
+    let millis_low = (millis & 0xFFFF) as u16;
+    let random_and_version = (bytes[1] as u16 | ((bytes[0] as u16) << 8) & 0x0FFF) | (0x7 << 12);
+
+    let d4 = [
+        (bytes[2] & 0x3F) | 0x80,
+        bytes[3],
+        bytes[4],
+        bytes[5],
+        bytes[6],
+        bytes[7],
+        bytes[8],
+        bytes[9],
+    ];
+
+    Uuid::from_fields(millis_high, millis_low, random_and_version, &d4)
+}
+
+fn decode_timestamp_millis(uuid: &Uuid) -> u64 {
+    let bytes = uuid.as_bytes();
+    let millis: u64 = (bytes[0] as u64) << 40
+        | (bytes[1] as u64) << 32
+        | (bytes[2] as u64) << 24
+        | (bytes[3] as u64) << 16
+        | (bytes[4] as u64) << 8
+        | (bytes[5] as u64);
+    millis
 }
