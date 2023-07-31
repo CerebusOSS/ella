@@ -30,9 +30,5 @@ mimalloc = { workspace = true, optional = true }
 [features]
 default = ["mimalloc"]
 
-[package.metadata.docs.rs]
-rustc-args = ["--cfg", "uuid_unstable"]
-rustdoc-args = ["--cfg", "uuid_unstable"]
-
 [package.metadata.release]
 tag = true

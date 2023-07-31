@@ -54,7 +54,3 @@ opentelemetry-otlp = { workspace = true }
 default = ["metrics"]
 metrics = ["dep:prometheus-client", "dep:hyper"]
 pyo3 = ["ella-common/pyo3", "ella-tensor/pyo3", "datafusion/pyarrow"]
-
-[package.metadata.docs.rs]
-rustc-args = ["--cfg", "uuid_unstable"]
-rustdoc-args = ["--cfg", "uuid_unstable"]

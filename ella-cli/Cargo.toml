@@ -23,7 +23,3 @@ mimalloc = { version = "0.1.37", default-features = false }
 clap = { version = "4.3.19", features = ["derive"] }
 dialoguer = { version = "0.10.4", features = ["history"] }
 shlex = "1.1.0"
-
-[package.metadata.docs.rs]
-rustc-args = ["--cfg", "uuid_unstable"]
-rustdoc-args = ["--cfg", "uuid_unstable"]

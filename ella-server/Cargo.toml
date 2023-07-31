@@ -41,7 +41,3 @@ ella-tensor = { workspace = true }
 [build-dependencies]
 tonic-build = { workspace = true }
 protobuf-src = { workspace = true }
-
-[package.metadata.docs.rs]
-rustc-args = ["--cfg", "uuid_unstable"]
-rustdoc-args = ["--cfg", "uuid_unstable"]
