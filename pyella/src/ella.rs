@@ -1,6 +1,6 @@
 use std::{future::IntoFuture, sync::Arc};
 
-use ella::{Ella, EllaConfig};
+use ella::{Config, Ella};
 use pyo3::{prelude::*, types::PyMapping};
 
 use crate::{
@@ -33,7 +33,7 @@ pub fn open(
     let config = if let Some(config) = config {
         deserialize_py(py, &config.to_object(py))?
     } else {
-        EllaConfig::default()
+        Config::default()
     };
     let inner = if create {
         let mut f = ella::open(root).or_create(config);

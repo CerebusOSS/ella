@@ -1,5 +1,9 @@
-/target
+.vscode
+
+# Rust
+target
 Cargo.lock
+!ella-cli/Cargo.lock
 
 # pyenv overrides
 .python-version

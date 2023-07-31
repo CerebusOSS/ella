@@ -16,7 +16,7 @@ async fn main() -> ella::Result<()> {
 
     let server = tokio::spawn(async move {
         let syn = ella::open("file:///tmp/ella/")
-            .or_create(ella::EllaConfig::default())
+            .or_create(ella::Config::default())
             .and_serve("localhost:50051")?
             .await?;
 

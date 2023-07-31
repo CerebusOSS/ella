@@ -1,10 +1,8 @@
-# ella: Embedded Low-Latency dAtastore
+# ella: Embedded Low-Latency Datastore
 
 [![Crates.io](https://img.shields.io/crates/v/ella?style=for-the-badge)](https://crates.io/crates/ella/)
-[![docs.rs](https://img.shields.io/docsrs/ella?style=for-the-badge)]()
+[![docs.rs](https://img.shields.io/docsrs/ella?style=for-the-badge)](https://docs.rs/ella/)
 ![Crates.io](https://img.shields.io/crates/l/ella?style=for-the-badge)
-
-
 
 
 **ella is in extremely early development. There is very little documentation and many parts of it do not work. Expect that any part of the API may change in the future.**
@@ -19,6 +17,21 @@ ella is **not**:
 
 - An ACID database.
 - A replacement for Delta Lake, Snowflake, or any other cloud data service.
+
+## Usage
+
+### Rust
+
+*[See the `ella` crate](ella/)*
+
+### Python
+
+*[See the `pyella` package](pyella/)*
+
+### CLI
+
+*[See the `ella-cli` crate](ella-cli/)*
+
 
 ## Use Cases
 
@@ -100,3 +113,9 @@ Data in ella is grouped into *tables*. Each table is either a *topic* or a *view
 ella follows the *Catalog → Schema → Table* organizational model.
 
 The default catalog is `"ella"` and the default schema is `"public"`.
+
+### Columns and Indices
+
+Ella is a time-series datastore, and all topics have a timestamp as their first column (named `"time"` by default but can be renamed) and primary index.
+
+Views are not required to have a time column.

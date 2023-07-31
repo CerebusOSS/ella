@@ -7,11 +7,12 @@ use crate::{
         tonic::transport::{Channel, Server},
     },
     table::GetTable,
+    Config,
 };
 use ella_engine::{
     registry::{Id, SchemaRef, TableRef},
     table::info::TableInfo,
-    EllaConfig, EllaContext,
+    EllaContext,
 };
 use ella_server::{client::EllaClient, tonic::codegen::http::uri::InvalidUri};
 use futures::{future::BoxFuture, FutureExt};
@@ -39,7 +40,7 @@ impl Ella {
         Self { inner }
     }
 
-    pub async fn connect(addr: impl AsRef<str>) -> crate::Result<Self> {
+    pub(crate) async fn connect(addr: impl AsRef<str>) -> crate::Result<Self> {
         let channel =
             Channel::builder(addr.as_ref().parse().map_err(|err: InvalidUri| {
                 crate::server::ClientError::InvalidUri(err.to_string())
@@ -58,7 +59,7 @@ impl Ella {
         }
     }
 
-    pub(crate) fn create(root: impl Into<String>, config: impl Into<EllaConfig>) -> CreateElla {
+    pub(crate) fn create(root: impl Into<String>, config: impl Into<Config>) -> CreateElla {
         CreateElla {
             root: root.into(),
             serve: None,
@@ -93,6 +94,9 @@ impl Ella {
         }
     }
 
+    /// Execute a SQL statement on the datastore.
+    ///
+    /// This is shorthand for `self.query("<cmd>").execute()`.
     pub async fn execute(&self, sql: impl AsRef<str>) -> crate::Result<()> {
         self.query(sql).await?.execute().await?;
         Ok(())
@@ -110,6 +114,9 @@ impl Ella {
         GetSchema::new(self, schema.into())
     }
 
+    /// Set `catalog` as the default catalog for the current context.
+    ///
+    /// This is broadly equivalent to the SQL statement `USE CATALOG <catalog>`.
     pub async fn use_catalog<'a>(mut self, catalog: impl Into<Id<'a>>) -> crate::Result<Self> {
         use EllaInner::*;
         match &mut self.inner {
@@ -121,6 +128,9 @@ impl Ella {
         Ok(self)
     }
 
+    /// Set `schema` as the default schema for the current context.
+    ///
+    /// This is broadly equivalent to the SQL statement `USE SCHEMA <schema>`.
     pub async fn use_schema<'a>(mut self, schema: impl Into<Id<'a>>) -> crate::Result<Self> {
         use EllaInner::*;
         match &mut self.inner {
@@ -132,11 +142,27 @@ impl Ella {
         Ok(self)
     }
 
-    pub fn config(&self) -> EllaConfig {
+    pub fn config(&self) -> Config {
         use EllaInner::*;
         match &self.inner {
             Local { ctx, .. } => ctx.config().clone(),
             Remote(client) => client.config(),
+        }
+    }
+
+    pub fn default_catalog(&self) -> Id<'static> {
+        use EllaInner::*;
+        match &self.inner {
+            Local { ctx, .. } => ctx.default_catalog().clone(),
+            Remote(client) => client.default_catalog(),
+        }
+    }
+
+    pub fn default_schema(&self) -> Id<'static> {
+        use EllaInner::*;
+        match &self.inner {
+            Local { ctx, .. } => ctx.default_schema().clone(),
+            Remote(client) => client.default_schema(),
         }
     }
 
@@ -208,15 +234,27 @@ impl Ella {
 pub struct OpenElla {
     root: String,
     serve: Option<Vec<SocketAddr>>,
-    create: Option<EllaConfig>,
+    create: Option<Config>,
 }
 
 impl OpenElla {
-    pub fn or_create(mut self, config: impl Into<EllaConfig>) -> Self {
+    /// Create a new datastore if one doesn't already exist.
+    pub fn or_create(mut self, config: impl Into<Config>) -> Self {
         self.create = Some(config.into());
         self
     }
 
+    /// Create a new datastore with default options if one doesn't already exist.
+    ///
+    /// Shorthand for `or_create(ella::Config::default())`.
+    pub fn or_create_default(mut self) -> Self {
+        self.create = Some(Config::default());
+        self
+    }
+
+    /// Serve the ella API on `addr`.
+    ///
+    /// This allows clients to access ella using [`ella::connect`].
     pub fn and_serve<A: ToSocketAddrs>(mut self, addr: A) -> crate::Result<Self> {
         self.serve = Some(addr.to_socket_addrs()?.collect());
         Ok(self)
@@ -254,11 +292,14 @@ impl IntoFuture for OpenElla {
 pub struct CreateElla {
     root: String,
     serve: Option<Vec<SocketAddr>>,
-    config: EllaConfig,
+    config: Config,
     if_not_exists: bool,
 }
 
 impl CreateElla {
+    /// Use the existing datastore at the given path if one exists.
+    ///
+    /// This is equivalent to `ella::open().or_create()`.
     pub fn if_not_exists(mut self) -> Self {
         self.if_not_exists = true;
         self
