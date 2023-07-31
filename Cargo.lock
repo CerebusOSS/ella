@@ -1181,7 +1181,7 @@ checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
 
 [[package]]
 name = "ella"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "datafusion",
  "ella-common",
@@ -1199,7 +1199,7 @@ dependencies = [
 
 [[package]]
 name = "ella-cli"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -1215,7 +1215,7 @@ dependencies = [
 
 [[package]]
 name = "ella-common"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "arrow-flight",
  "datafusion",
@@ -1239,7 +1239,7 @@ dependencies = [
 
 [[package]]
 name = "ella-derive"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "darling",
  "proc-macro-crate",
@@ -1250,7 +1250,7 @@ dependencies = [
 
 [[package]]
 name = "ella-engine"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "arrow-schema",
@@ -1288,7 +1288,7 @@ dependencies = [
 
 [[package]]
 name = "ella-server"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "arrow-flight",
@@ -1322,7 +1322,7 @@ dependencies = [
 
 [[package]]
 name = "ella-tensor"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "arrow",
  "comfy-table",
@@ -2627,7 +2627,7 @@ dependencies = [
 
 [[package]]
 name = "pyella"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "arrow",
  "derive_more",
