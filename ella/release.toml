@@ -1,0 +1,10 @@
+pre-release-hook = [
+    "git",
+    "cliff",
+    "-w",
+    "..",
+    "-o",
+    "../CHANGELOG.md",
+    "--tag",
+    "{{version}}",
+]
