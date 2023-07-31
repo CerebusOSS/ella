@@ -1152,7 +1152,7 @@ checksum = "a26ae43d7bcc3b814de94796a5e736d4029efb0ee900c12e2d54c993ad1a1e07"
 
 [[package]]
 name = "ella"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "datafusion",
  "ella-common",
@@ -1184,7 +1184,7 @@ dependencies = [
 
 [[package]]
 name = "ella-common"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arrow-flight",
  "datafusion",
@@ -1207,7 +1207,7 @@ dependencies = [
 
 [[package]]
 name = "ella-derive"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "darling",
  "proc-macro-crate",
@@ -1218,7 +1218,7 @@ dependencies = [
 
 [[package]]
 name = "ella-engine"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arrow-schema",
  "async-trait",
@@ -1252,7 +1252,7 @@ dependencies = [
 
 [[package]]
 name = "ella-server"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arrow-flight",
  "dashmap",
@@ -1280,7 +1280,7 @@ dependencies = [
 
 [[package]]
 name = "ella-tensor"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arrow",
  "comfy-table",
