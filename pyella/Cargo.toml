@@ -29,6 +29,3 @@ mimalloc = { workspace = true, optional = true }
 
 [features]
 default = ["mimalloc"]
-
-[package.metadata.release]
-tag = true

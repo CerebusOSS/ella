@@ -6,6 +6,7 @@ members = [
     "ella-engine",
     "ella-server",
     "ella-derive",
+    "ella-cli",
     "ella",
     "pyella",
 ]

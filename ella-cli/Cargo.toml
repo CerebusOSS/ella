@@ -12,14 +12,13 @@ name = "ella"
 path = "src/main.rs"
 
 [dependencies]
-ella = { path = "../ella", version = "0.1.2" }
-
-anyhow = "1.0.72"
-tracing = "0.1.37"
-tracing-subscriber = "0.3.17"
-futures = "0.3.28"
-tokio = { version = "1.27.0", features = ["full"] }
-mimalloc = { version = "0.1.37", default-features = false }
+ella = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+futures = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+mimalloc = { workspace = true }
 clap = { version = "4.3.19", features = ["derive"] }
 dialoguer = { version = "0.10.4", features = ["history"] }
 shlex = "1.1.0"
