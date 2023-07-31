@@ -33,3 +33,6 @@ default = ["mimalloc"]
 [package.metadata.docs.rs]
 rustc-args = ["--cfg", "uuid_unstable"]
 rustdoc-args = ["--cfg", "uuid_unstable"]
+
+[package.metadata.release]
+disable-tag = true
