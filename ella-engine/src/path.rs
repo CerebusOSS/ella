@@ -1,4 +1,4 @@
-use std::{fmt::Display, str::FromStr};
+use std::{fmt::Display, path::PathBuf, str::FromStr};
 
 use object_store::path::Path as ObjPath;
 use url::Url;
@@ -28,7 +28,26 @@ impl FromStr for Path {
     type Err = crate::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(Url::parse(s)?))
+        if let Ok(url) = Url::parse(s) {
+            Ok(Self(url))
+        } else {
+            let mut path: PathBuf = s.parse().expect("path parsing is infallible");
+
+            // Can't use fs::canonicalize if path doesn't exist yet
+            if path.exists() {
+                path = path.canonicalize()?;
+            } else if !path.has_root() {
+                path = std::env::current_dir()?.join(path);
+            }
+
+            match Url::from_file_path(path) {
+                Ok(url) => Ok(Self(url)),
+                Err(_) => Err(crate::EngineError::InvalidFilename(format!(
+                    "\"{s}\" is not a valid URL or local filepath"
+                ))
+                .into()),
+            }
+        }
     }
 }
 
