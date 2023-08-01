@@ -29,3 +29,8 @@ default = ["derive", "metrics"]
 derive = ["ella-derive"]
 metrics = ["ella-engine/metrics"]
 pyo3 = ["ella-engine/pyo3", "ella-tensor/pyo3", "ella-common/pyo3"]
+
+[package.metadata.cargo-udeps.ignore]
+development = [
+    "tokio-test", # used in doc tests
+]

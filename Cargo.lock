@@ -1299,21 +1299,17 @@ dependencies = [
 name = "ella-server"
 version = "0.1.4"
 dependencies = [
- "anyhow",
  "arrow-flight",
  "dashmap",
  "datafusion",
  "datafusion-proto",
  "ella-common",
  "ella-engine",
- "ella-tensor",
  "flume",
  "futures",
  "hmac",
  "jwt",
  "once_cell",
- "opentelemetry",
- "opentelemetry-otlp",
  "prost",
  "protobuf-src",
  "serde",
@@ -1324,8 +1320,6 @@ dependencies = [
  "tonic-build",
  "tower-http",
  "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
  "uuid",
 ]
 

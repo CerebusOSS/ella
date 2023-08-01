@@ -30,14 +30,6 @@ jwt = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 
-[dev-dependencies]
-tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
-anyhow = "1.0.70"
-tracing-opentelemetry = { workspace = true }
-opentelemetry = { workspace = true }
-opentelemetry-otlp = { workspace = true }
-ella-tensor = { workspace = true }
-
 [build-dependencies]
 tonic-build = { workspace = true }
 
