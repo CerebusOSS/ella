@@ -1,14 +1,5 @@
 tag = true
-pre-release-hook = [
-    "git",
-    "cliff",
-    "-w",
-    "..",
-    "-o",
-    "../CHANGELOG.md",
-    "--tag",
-    "{{version}}",
-]
+pre-release-hook = ["just", "prerelease", "{{version}}"]
 
 pre-release-replacements = [
     { file = "src/lib.rs", search = "ella = \"[a-z0-9\\.-]+\"", replace = "ella = \"{{version}}\"" },
