@@ -254,7 +254,7 @@ impl OpenElla {
 
     /// Serve the ella API on `addr`.
     ///
-    /// This allows clients to access ella using [`ella::connect`].
+    /// This allows clients to access ella using [`connect`](crate::connect).
     pub fn and_serve<A: ToSocketAddrs>(mut self, addr: A) -> crate::Result<Self> {
         self.serve = Some(addr.to_socket_addrs()?.collect());
         Ok(self)
