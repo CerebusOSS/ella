@@ -3,7 +3,7 @@
 //! Add `ella` to your `Cargo.toml` file:
 //!
 //! ```toml
-//! ella = "0.1.3"
+//! ella = "0.1.4"
 //! ```
 //!
 //! You may also want to install the [ella CLI tools](https://crates.io/crates/ella-cli/).

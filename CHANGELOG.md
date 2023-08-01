@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4] - 2023-08-01
+
+### Bug Fixes
+
+- Ella-server now builds on windows
+
 ## [0.1.3] - 2023-08-01
 
 ### Bug Fixes
