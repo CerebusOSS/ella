@@ -8,6 +8,11 @@
 //!
 //! You may also want to install the [ella CLI tools](https://crates.io/crates/ella-cli/).
 //!
+//! ## Windows
+//!
+//! Building `ella` on Windows requires the Protobuf compiler to be installed.
+//! [You can download a pre-built binary from the Protobuf repo.](https://github.com/protocolbuffers/protobuf/releases)
+//!
 //! # Usage
 //!
 //! You can access ella by either starting a new instance or connecting to an existing instance.
