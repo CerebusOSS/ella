@@ -59,7 +59,7 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }} -p {{ env.CRATE_NAME }}
+        run: cargo build --release --target ${{ matrix.target }} -p ${{ env.CRATE_NAME }}
       - name: Get tag name
         shell: bash
         run: echo "##[set-output name=tag;]$(echo ${GITHUB_REF#refs/tags/})"
