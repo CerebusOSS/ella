@@ -39,8 +39,7 @@ impl EllaServer {
             EllaSqlService::new(connections.clone()),
             connections.clone(),
         );
-        let engine_svc =
-            EngineServiceServer::with_interceptor(EllaEngineService::default(), connections);
+        let engine_svc = EngineServiceServer::with_interceptor(EllaEngineService, connections);
         let stop = Arc::new(Notify::new());
 
         let stop_signal = stop.clone();
