@@ -1,4 +1,5 @@
 tag = true
+tag-prefix = ""
 pre-release-hook = ["just", "prerelease", "{{version}}"]
 
 pre-release-replacements = [
