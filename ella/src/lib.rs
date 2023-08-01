@@ -60,6 +60,8 @@ pub use crate::ella::Ella;
 use crate::ella::{CreateElla, OpenElla};
 pub use ella_common as common;
 pub use ella_common::{now, row::Row, time, Error, Result, TensorType, Time};
+
+#[cfg(feature = "derive")]
 pub use ella_derive::RowFormat;
 pub use ella_engine as engine;
 pub use ella_server as server;
