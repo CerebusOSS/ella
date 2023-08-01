@@ -8,24 +8,18 @@
 
 ## Getting Started
 
-`ella` requires a few additional setup steps after adding it as a dependency.
-
-`ella` depends on the currently unstable UUIDv7 specification.
-You will need to add `--cfg uuid_unstable` to your `RUSTFLAGS`.
-The easiest way to do this is to update (or create) your `.cargo/config.toml` to include
+Add `ella` to your `Cargo.toml` file:
 
 ```toml
-[build]
-rustflags = ["--cfg", "uuid_unstable"]
+ella = "0.1.3"
 ```
 
-For your crate to build on platforms like `doc.rs` you'll also need to add the following to your `Cargo.toml` file:
+You may also want to install the [ella CLI tools](https://crates.io/crates/ella-cli/).
 
-```toml
-[package.metadata.docs.rs]
-rustc-args = ["--cfg", "uuid_unstable"]
-rustdoc-args = ["--cfg", "uuid_unstable"]
-```
+### Windows
+
+Building `ella` on Windows requires the Protobuf compiler to be installed.
+[You can download a pre-built binary from the Protobuf repo.](https://github.com/protocolbuffers/protobuf/releases)
 
 ## Usage
 
@@ -46,3 +40,5 @@ Connect to an existing instance using `ella::connect`:
 ```rust
 let el = ella::connect("http://localhost:50052").await?;
 ```
+
+<!-- cargo-rdme end -->
