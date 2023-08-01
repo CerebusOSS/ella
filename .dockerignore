@@ -1,0 +1,9 @@
+# Rust
+target/
+
+# Python
+*.so
+__pycache__
+
+# Git
+.git/
