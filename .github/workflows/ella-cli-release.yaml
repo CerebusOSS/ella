@@ -73,7 +73,7 @@ jobs:
           mkdir target/stage
           cd target/${{ matrix.target }}/release
           strip ${{ env.BIN_NAME }}
-          tar czvf ../../stage/${{ env.BIN_NAME }}-${{ steps.extract_tag.outputs.tag }}-${{ matrix.name }} ${{ env.CRATE_NAME }}
+          tar czvf ../../stage/${{ env.BIN_NAME }}-${{ steps.extract_tag.outputs.tag }}-${{ matrix.name }} ${{ env.BIN_NAME }}
           cd -
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
@@ -94,7 +94,7 @@ jobs:
       - name: Build | Publish
         uses: softprops/action-gh-release@v1
         with:
-          files: ${{ env.CRATE_NAME }}-*/${{ env.CRATE_NAME }}-*
+          files: ${{ env.BIN_NAME }}-*/${{ env.BIN_NAME }}-*
           body_path: CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
