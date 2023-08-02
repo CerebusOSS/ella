@@ -41,7 +41,6 @@ jobs:
           python-version: '3.10'
           architecture: ${{ matrix.target }}
       - name: Setup Protobuf
-        if: matrix.os == 'windows-latest'
         uses: arduino/setup-protoc@v2
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
