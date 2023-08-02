@@ -1,10 +1,29 @@
 [project]
-name = "ella"
+name = "pyella-rs"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+]
+
+[project.urls]
+Repository = "https://github.com/BlackrockNeurotech/ella"
+Changelog = "https://github.com/BlackrockNeurotech/ella/blob/main/CHANGELOG.md"
 
 [build-system]
-requires = ["maturin>=0.14,<0.15"]
+requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
 module-name = "ella._internal"
+locked = true
+exclude = [{ path = "examples/**", format = "sdist" }]
