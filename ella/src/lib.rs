@@ -50,20 +50,19 @@ pub mod shape {
     };
 }
 
-pub mod tensor {
-    pub use ella_tensor::{
-        frame, tensor, DataFrame, Tensor, Tensor1, Tensor2, Tensor3, Tensor4, TensorD,
-    };
-}
-
 pub use crate::ella::Ella;
 use crate::ella::{CreateElla, OpenElla};
+#[doc(inline)]
 pub use ella_common as common;
 pub use ella_common::{now, row::Row, time, Error, Result, TensorType, Time};
+#[doc(inline)]
+pub use ella_tensor as tensor;
 
 #[cfg(feature = "derive")]
 pub use ella_derive::RowFormat;
+#[doc(inline)]
 pub use ella_engine as engine;
+#[doc(inline)]
 pub use ella_server as server;
 pub use engine::{
     config::{EllaConfig as Config, EllaConfigBuilder as ConfigBuilder},
