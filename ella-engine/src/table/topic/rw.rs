@@ -13,7 +13,7 @@ use datafusion::{
 };
 
 use flume::r#async::SendSink;
-use futures::{Sink, SinkExt};
+use futures::{FutureExt, Sink, SinkExt};
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 use tracing::Instrument;
@@ -152,17 +152,22 @@ impl RwBufferWorker {
             let rows = batch.num_rows();
             self.writing_in.push(batch);
             let shards = self.shards.clone();
-            let res = self.writing_in.try_process(|values| {
-                async move {
-                    let _ = shards.write(values)?.await;
-                    Ok(())
-                }
-                .in_current_span()
-            });
-            match res {
-                Ok(_) => tracing::debug!(rows, "writing compacted buffer"),
-                Err(error) => tracing::error!(?error, rows, "failed to write compacted buffer"),
-            }
+            let _ = self
+                .writing_in
+                .process(|values| match shards.write(values) {
+                    Ok(handle) => {
+                        tracing::debug!(rows, "writing compacted buffer");
+                        async move {
+                            let _ = handle.await;
+                        }
+                        .in_current_span()
+                        .left_future()
+                    }
+                    Err(error) => {
+                        tracing::error!(?error, rows, "failed to write compacted buffer");
+                        futures::future::ready(()).right_future()
+                    }
+                });
         };
 
         let mut len = 0;

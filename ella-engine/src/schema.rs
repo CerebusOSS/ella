@@ -139,6 +139,7 @@ impl EllaSchema {
     }
 
     pub(crate) fn load(schema: &SchemaState, state: &EllaState) -> crate::Result<Self> {
+        tracing::debug!(id=%schema.id, "loading schema state");
         let tables = DashMap::new();
 
         for table in &schema.tables {

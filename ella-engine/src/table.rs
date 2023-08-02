@@ -122,6 +122,7 @@ impl EllaTable {
     }
 
     pub fn load(table: &TableState, state: &EllaState) -> crate::Result<Self> {
+        tracing::debug!(id=%table.id, "loading table state");
         Self::new(table.id.clone(), table.info.clone(), state, false)
     }
 

@@ -5,7 +5,7 @@ use datafusion::{
     arrow::record_batch::RecordBatch,
     parquet::{arrow::AsyncArrowWriter, file::properties::WriterProperties, format::SortingColumn},
 };
-use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
+use futures::{future::BoxFuture, stream::FuturesUnordered, FutureExt, StreamExt};
 use object_store::ObjectStore;
 use tokio::{
     io::AsyncWrite,
@@ -30,6 +30,9 @@ pub struct ShardWriterWorker {
     config: ShardConfig,
     shards: Arc<ShardSet>,
     recv: flume::Receiver<WriteJob>,
+    active: Option<JobHandle>,
+    len: usize,
+    pending: FuturesUnordered<BoxFuture<'static, crate::Result<()>>>,
 }
 
 impl ShardWriterWorker {
@@ -48,53 +51,30 @@ impl ShardWriterWorker {
             config,
             shards,
             recv,
+            active: None,
+            len: 0,
+            pending: FuturesUnordered::new(),
         }
     }
 
-    pub(crate) async fn run(self) -> crate::Result<()> {
-        let wait_stop = self.stop.notified();
+    pub(crate) async fn run(mut self) -> crate::Result<()> {
+        let stop = self.stop.clone();
+        let wait_stop = stop.notified();
         futures::pin_mut!(wait_stop);
-
-        let mut pending = FuturesUnordered::new();
-        let mut active: Option<JobHandle> = None;
-        let mut len = 0;
 
         loop {
             tokio::select! {
                 biased;
+                //
                 job = self.recv.recv_async() => {
                     if let Ok(job) = job {
-                        for batch in &job.values {
-                            len += batch.num_rows();
-                        }
-                        let handle = if let Some(handle) = &mut active {
-                            handle
-                        } else {
-                            let shard = SingleShardWriter::create(
-                                self.table.arrow_schema().clone(),
-                                self.table.parquet_schema().cloned(),
-                                self.table.sorting_cols().cloned(),
-                                self.store.clone(),
-                                &self.config,
-                                self.shards.clone(),
-                            ).await?;
-                            active = Some(JobHandle::new(shard));
-                            active.as_mut().unwrap()
-                        };
-                        if let Err(error) = handle.send(job) {
-                            tracing::error!(?error, "failed to write to active shard");
-                            active = None;
-                        }
-                        if len >= self.config.min_shard_size {
-                            pending.push(std::mem::take(&mut active).unwrap().finish().boxed());
-                            len = 0;
-                        }
+                        self.handle_write(job).await?;
                     } else {
                         break;
                     }
                 },
                 // Clear pending write jobs from the queue
-                res = pending.next(), if !pending.is_empty() => {
+                res = self.pending.next(), if !self.pending.is_empty() => {
                     if let Some(Err(error)) = res {
                         tracing::error!(?error, "failed to write data shard to parquet");
                     }
@@ -103,12 +83,21 @@ impl ShardWriterWorker {
             }
         }
         tracing::debug!("shutting down shard writer");
+        let remaining = self.recv.try_iter().collect::<Vec<_>>();
+        for job in remaining {
+            self.handle_write(job).await?;
+        }
+        debug_assert!(
+            self.recv.is_empty(),
+            "shard writer is closed but still has pending jobs"
+        );
+
         // Close active write channel
-        if let Some(active) = active {
-            pending.push(active.finish().boxed());
+        if let Some(active) = self.active {
+            self.pending.push(active.finish().boxed());
         }
         // Wait for all pending jobs to finish
-        while let Some(res) = pending.next().await {
+        while let Some(res) = self.pending.next().await {
             if let Err(error) = res {
                 tracing::error!(?error, "failed to write data shard to parquet");
             }
@@ -116,6 +105,37 @@ impl ShardWriterWorker {
         tracing::debug!("shard writer shut down");
 
         Ok(())
+    }
+
+    async fn handle_write(&mut self, job: WriteJob) -> crate::Result<()> {
+        for batch in &job.values {
+            self.len += batch.num_rows();
+        }
+        let handle = if let Some(handle) = &mut self.active {
+            handle
+        } else {
+            let shard = SingleShardWriter::create(
+                self.table.arrow_schema().clone(),
+                self.table.parquet_schema().cloned(),
+                self.table.sorting_cols().cloned(),
+                self.store.clone(),
+                &self.config,
+                self.shards.clone(),
+            )
+            .await?;
+            self.active = Some(JobHandle::new(shard));
+            self.active.as_mut().unwrap()
+        };
+        if let Err(error) = handle.send(job) {
+            tracing::error!(?error, "failed to write to active shard");
+            self.active = None;
+        }
+        if self.len >= self.config.min_shard_size {
+            self.pending
+                .push(std::mem::take(&mut self.active).unwrap().finish().boxed());
+            self.len = 0;
+        }
+        crate::Result::Ok(())
     }
 }
 

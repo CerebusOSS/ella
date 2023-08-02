@@ -9,8 +9,10 @@ use tracing_subscriber::{
 async fn main() -> ella::Result<()> {
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::fmt::layer()
-                .with_filter(tracing_subscriber::EnvFilter::new("INFO")),
+            tracing_subscriber::fmt::layer().with_filter(
+                tracing_subscriber::EnvFilter::new("INFO")
+                    .add_directive("ella_engine=debug".parse().unwrap()),
+            ),
         )
         .init();
 
@@ -43,9 +45,9 @@ async fn main() -> ella::Result<()> {
         let x = syn
             .query("select x from a")
             .await?
-            .create_view("ax")
-            .if_not_exists()
-            .await?
+            // .create_view("ax")
+            // .if_not_exists()
+            // .await?
             .col3::<f32>("x")?
             .execute()
             .await?;

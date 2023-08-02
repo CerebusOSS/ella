@@ -58,6 +58,7 @@ impl ShardSet {
         let path = table.path().clone();
         let mut shards = BTreeMap::new();
         for shard in table.shards() {
+            tracing::debug!(id=%shard.id, "loading shard");
             shards.insert(shard.id, shard.clone());
         }
 

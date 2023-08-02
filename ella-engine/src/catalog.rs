@@ -51,6 +51,8 @@ impl EllaCatalog {
         if_not_exists: bool,
     ) -> crate::Result<Arc<EllaSchema>> {
         let id: Id<'static> = id.into().into_owned();
+        tracing::debug!(%id, if_not_exists, "creating schema");
+
         match (if_not_exists, self.schema(id.as_ref())) {
             (true, Some(schema)) => Ok(schema),
             (true, None) | (false, None) => {
@@ -128,6 +130,7 @@ impl EllaCatalog {
     }
 
     pub(crate) fn load(catalog: &CatalogState, state: &EllaState) -> crate::Result<Self> {
+        tracing::debug!(id=%catalog.id, "loading catalog state");
         let schemas = DashMap::new();
 
         for schema in &catalog.schemas {
