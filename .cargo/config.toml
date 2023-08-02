@@ -1,0 +1,11 @@
+[profile.release]
+codegen-units = 1
+lto = "thin"
+
+[profile.release-quick]
+inherits = "release"
+codegen-units = 16
+lto = false
+
+[profile.release.package.ella-cli]
+strip = true
