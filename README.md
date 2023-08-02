@@ -33,6 +33,10 @@ ella is **not**:
 
 *[See the `ella-cli` crate](ella-cli/)*
 
+### Docker
+
+*[See the Docker guide](docker/README.md)*
+
 
 ## Use Cases
 
