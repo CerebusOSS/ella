@@ -13,6 +13,7 @@ classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: 3",
 ]
+dependencies = ["pyarrow>=12.0.0"]
 
 [project.urls]
 Repository = "https://github.com/BlackrockNeurotech/ella"

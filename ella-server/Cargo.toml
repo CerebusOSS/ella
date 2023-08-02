@@ -36,4 +36,8 @@ tonic-build = { workspace = true }
 # protobuf-src doesn't support Windows
 # https://github.com/MaterializeInc/rust-protobuf-native/issues/4
 [target.'cfg(not(target_os = "windows"))'.build-dependencies]
-protobuf-src = { workspace = true }
+protobuf-src = { workspace = true, optional = true }
+
+[features]
+default = ["protobuf"]
+protobuf = ["dep:protobuf-src"]

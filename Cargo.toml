@@ -26,9 +26,9 @@ tag = false
 ella-common = { path = "./ella-common", version = "0.1.4" }
 ella-tensor = { path = "./ella-tensor", version = "0.1.4" }
 ella-engine = { path = "./ella-engine", version = "0.1.4" }
-ella-server = { path = "./ella-server", version = "0.1.4" }
+ella-server = { path = "./ella-server", version = "0.1.4", default-features = false }
 ella-derive = { path = "./ella-derive", version = "0.1.4" }
-ella = { path = "./ella", version = "0.1.4" }
+ella = { path = "./ella", version = "0.1.4", default-features = false }
 pyella = { path = "./pyella", version = "0.1.4" }
 
 derive_more = "0.99.17"

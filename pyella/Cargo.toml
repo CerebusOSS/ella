@@ -29,4 +29,6 @@ serde_json = { workspace = true }
 mimalloc = { workspace = true, optional = true }
 
 [features]
-default = ["mimalloc"]
+default = ["mimalloc", "metrics", "protobuf"]
+metrics = ["ella/metrics"]
+protobuf = ["ella/protobuf"]
