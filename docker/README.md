@@ -9,5 +9,5 @@ You can use the [CLI](../ella-cli/README.md) or the [Rust](../ella/README.md) or
 docker run --rm \
     -p 50052:50052 \
     -v /path/to/datastore:/var/lib/ella \
-    ghcr.io/blackrockneurotech/ella:latest
+    ghcr.io/cerebusoss/ella:latest
 ```

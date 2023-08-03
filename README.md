@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/ella?style=for-the-badge)](https://crates.io/crates/ella/)
 [![docs.rs](https://img.shields.io/docsrs/ella?style=for-the-badge)](https://docs.rs/ella/)
-[![GitHub Workflow Status (with event)](https://img.shields.io/github/actions/workflow/status/BlackrockNeurotech/ella/rust.yaml?style=for-the-badge)](https://github.com/BlackrockNeurotech/ella/actions/workflows/rust.yaml)
+[![GitHub Workflow Status (with event)](https://img.shields.io/github/actions/workflow/status/CerebusOSS/ella/rust.yaml?style=for-the-badge)](https://github.com/CerebusOSS/ella/actions/workflows/rust.yaml)
 ![Crates.io](https://img.shields.io/crates/l/ella?style=for-the-badge)
 
 

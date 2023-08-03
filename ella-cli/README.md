@@ -5,7 +5,7 @@
 
 CLI tools for working with ella datastores.
 
-[For general information on getting started with ella, see the `ella` repo.](https://github.com/BlackrockNeurotech/ella)
+[For general information on getting started with ella, see the `ella` repo.](https://github.com/CerebusOSS/ella)
 
 ## Installation
 
