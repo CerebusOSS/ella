@@ -43,6 +43,22 @@ impl Lazy {
         Ok(self.stream().await?.rows())
     }
 
+    pub fn limit(mut self, limit: usize) -> crate::Result<Self> {
+        self.plan = self.plan.try_map(|plan| {
+            LogicalPlanBuilder::from(plan)
+                .limit(0, Some(limit))?
+                .build()
+        })?;
+        Ok(self)
+    }
+
+    pub fn skip(mut self, skip: usize) -> crate::Result<Self> {
+        self.plan = self
+            .plan
+            .try_map(|plan| LogicalPlanBuilder::from(plan).limit(skip, None)?.build())?;
+        Ok(self)
+    }
+
     pub fn col<T, S>(&self, col: &str) -> crate::Result<Column<T, S>>
     where
         T: TensorValue,

@@ -571,7 +571,7 @@ fn encode_uuid_to_path(uuid: Uuid, root: &Path, prefix: Option<&str>, ext: &str)
 }
 
 // TODO: replace UUID logic once v7 is stabilized
-// See: [BlackrockNeurotech/ella#11](https://github.com/BlackrockNeurotech/ella/issues/11)
+// See: [CerebusOSS/ella#11](https://github.com/CerebusOSS/ella/issues/11)
 // Current implementation is taken from here: https://github.com/uuid-rs/uuid/blob/main/src/timestamp.rs
 
 fn new_uuid_now() -> Uuid {

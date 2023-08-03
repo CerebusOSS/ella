@@ -1,22 +1,18 @@
+mod publisher;
+
 use std::{fmt::Debug, future::IntoFuture, sync::Arc};
 
-use arrow::{pyarrow::FromPyArrow, record_batch::RecordBatch};
 use ella::{
     engine::table::{
         info::{TableInfo, TopicInfo, ViewInfo},
         Column,
     },
     shape::Dyn,
-    table::Publisher,
     Ella, Table, TensorType,
 };
-use futures::{FutureExt, SinkExt};
-use pyo3::{
-    exceptions::{PyKeyError, PyRuntimeError},
-    prelude::*,
-    types::PyTuple,
-};
+use pyo3::{exceptions::PyKeyError, prelude::*, types::PyTuple};
 
+use self::publisher::PyPublisher;
 use crate::{data_types::wrap_dtype, utils::wait_for_future};
 
 #[derive(Debug, derive_more::From, derive_more::Into)]
@@ -60,8 +56,9 @@ pub struct PyTable {
 
 #[pymethods]
 impl PyTable {
-    fn publish(&self) -> PyResult<PyPublisher> {
-        Ok(self.inner.publish()?.into())
+    #[pyo3(signature = (capacity = 1))]
+    fn publish(&self, py: Python, capacity: usize) -> PyResult<PyPublisher> {
+        PyPublisher::new(py, self.inner.publish()?, capacity)
     }
 
     #[getter]
@@ -72,30 +69,6 @@ impl PyTable {
     #[getter]
     fn info(&self, py: Python) -> PyObject {
         PyTableInfo::from(self.inner.info()).into_py(py)
-    }
-}
-
-#[derive(Debug, derive_more::From, derive_more::Into)]
-#[pyclass(name = "Publisher")]
-pub struct PyPublisher {
-    inner: Publisher,
-}
-
-#[pymethods]
-impl PyPublisher {
-    fn try_write(&mut self, batch: &PyAny) -> PyResult<()> {
-        let batch = RecordBatch::from_pyarrow(batch)?;
-        match self.inner.send(batch).now_or_never() {
-            Some(Ok(_)) => Ok(()),
-            Some(Err(err)) => Err(err.into()),
-            None => Err(PyRuntimeError::new_err("failed to write to table")),
-        }
-    }
-
-    fn write(&mut self, py: Python, batch: &PyAny) -> PyResult<()> {
-        let batch = RecordBatch::from_pyarrow(batch)?;
-        wait_for_future(py, self.inner.send(batch))?;
-        Ok(())
     }
 }
 

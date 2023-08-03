@@ -109,12 +109,7 @@ impl Clone for PublisherInner {
 
 impl Drop for PublisherInner {
     fn drop(&mut self) {
-        if self.is_active {
-            let active = self.active.fetch_sub(1, Ordering::Release) - 1;
-            if active == 0 {
-                self.stop.notify_one();
-            }
-        }
+        self.deactivate();
     }
 }
 
@@ -130,6 +125,16 @@ impl PublisherInner {
             stop: self.stop.clone(),
             active: self.active.clone(),
             is_active,
+        }
+    }
+
+    fn deactivate(&mut self) {
+        if self.is_active {
+            self.is_active = false;
+            let active = self.active.fetch_sub(1, Ordering::Release) - 1;
+            if active == 0 {
+                self.stop.notify_one();
+            }
         }
     }
 }
@@ -170,12 +175,13 @@ impl Sink<RecordBatch> for Publisher {
         self.inner.rw.poll_flush_unpin(cx)
     }
 
-    #[inline]
     fn poll_close(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<std::result::Result<(), Self::Error>> {
-        self.inner.rw.poll_close_unpin(cx)
+        let res = futures::ready!(self.inner.rw.poll_close_unpin(cx));
+        self.inner.deactivate();
+        Poll::Ready(res)
     }
 }
 
