@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.5] - 2023-08-04
+
+### Bug Fixes
+
+- Ungated dependency on derive feature in ella crate
+- Broken protobuf dependency during cross-compilation
+- Potential race condition in topic writer
+
+### Documentation
+
+- Fixed broken link in ella docs
+- Added build status badge to readmes
+- Added contributor guidelines
+- Added Docker readme
+- Ella's re-exported crates now show up as submodules
+
+### Miscellaneous Tasks
+
+- Updated lockfile versions
+- Prepared pyella package for publication
+- Fixed broken links following move to new organization
+
+### Performance
+
+- Reduced ella-cli binary size
+
+### Styling
+
+- Removed unused source files
+- Removed default constructor for unit struct
+- Removed unused dev dependencies
+
 ## [0.1.4] - 2023-08-01
 
 ### Bug Fixes

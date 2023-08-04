@@ -13,7 +13,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 authors = ["Dexter Duckworth <dexterduck@users.noreply.github.com>"]
 license = "MIT OR Apache-2.0"
@@ -23,13 +23,13 @@ repository = "https://github.com/CerebusOSS/ella"
 tag = false
 
 [workspace.dependencies]
-ella-common = { path = "./ella-common", version = "0.1.4" }
-ella-tensor = { path = "./ella-tensor", version = "0.1.4" }
-ella-engine = { path = "./ella-engine", version = "0.1.4" }
-ella-server = { path = "./ella-server", version = "0.1.4", default-features = false }
-ella-derive = { path = "./ella-derive", version = "0.1.4" }
-ella = { path = "./ella", version = "0.1.4", default-features = false }
-pyella = { path = "./pyella", version = "0.1.4" }
+ella-common = { path = "./ella-common", version = "0.1.5" }
+ella-tensor = { path = "./ella-tensor", version = "0.1.5" }
+ella-engine = { path = "./ella-engine", version = "0.1.5" }
+ella-server = { path = "./ella-server", version = "0.1.5", default-features = false }
+ella-derive = { path = "./ella-derive", version = "0.1.5" }
+ella = { path = "./ella", version = "0.1.5", default-features = false }
+pyella = { path = "./pyella", version = "0.1.5" }
 
 derive_more = "0.99.17"
 serde = { version = "1.0.160", features = ["derive"] }

@@ -1190,7 +1190,7 @@ checksum = "a26ae43d7bcc3b814de94796a5e736d4029efb0ee900c12e2d54c993ad1a1e07"
 
 [[package]]
 name = "ella"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "datafusion",
  "ella-common",
@@ -1208,7 +1208,7 @@ dependencies = [
 
 [[package]]
 name = "ella-cli"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "clap",
@@ -1224,7 +1224,7 @@ dependencies = [
 
 [[package]]
 name = "ella-common"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "arrow-flight",
  "datafusion",
@@ -1248,7 +1248,7 @@ dependencies = [
 
 [[package]]
 name = "ella-derive"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "darling",
  "proc-macro-crate",
@@ -1259,7 +1259,7 @@ dependencies = [
 
 [[package]]
 name = "ella-engine"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "arrow-schema",
@@ -1297,7 +1297,7 @@ dependencies = [
 
 [[package]]
 name = "ella-server"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "arrow-flight",
  "dashmap",
@@ -1325,7 +1325,7 @@ dependencies = [
 
 [[package]]
 name = "ella-tensor"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "arrow",
  "comfy-table",
@@ -1525,7 +1525,7 @@ dependencies = [
 
 [[package]]
 name = "generate_typing"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "pyella",
 ]
@@ -2608,7 +2608,7 @@ dependencies = [
 
 [[package]]
 name = "pyella"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "arrow",
  "derive_more",
