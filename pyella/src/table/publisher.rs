@@ -16,6 +16,7 @@ use pyo3::{
 
 use crate::{dataframe::PyDataFrame, utils::wait_for_future};
 
+/// Writes rows to table.
 #[derive(Debug)]
 #[pyclass(name = "Publisher")]
 pub struct PyPublisher {
@@ -29,6 +30,7 @@ pub struct PyPublisher {
 
 #[pymethods]
 impl PyPublisher {
+    /// Write a row of values to the table.
     #[pyo3(signature = (*args, **kwargs))]
     fn write(&mut self, py: Python, args: &PyTuple, kwargs: Option<&PyDict>) -> PyResult<()> {
         self.append_row(py, args, kwargs)?;
@@ -37,12 +39,14 @@ impl PyPublisher {
         Ok(())
     }
 
+    /// Write any pending rows to the table.
     fn flush(&mut self, py: Python) -> PyResult<()> {
         self.maybe_write(py, true)?;
         wait_for_future(py, self.inner.flush())?;
         Ok(())
     }
 
+    /// Write a batch of rows to the table.
     #[pyo3(signature = (*args, **kwargs))]
     fn write_batch(&mut self, py: Python, args: &PyTuple, kwargs: Option<&PyDict>) -> PyResult<()> {
         // Flush any accumulated rows to retain row order
@@ -71,6 +75,9 @@ impl PyPublisher {
         Ok(())
     }
 
+    /// Close the publisher.
+    ///
+    /// Any pending values are flushed before closing.
     fn close(&mut self, py: Python) -> PyResult<()> {
         self.maybe_write(py, true)?;
         wait_for_future(py, self.inner.close())?;
@@ -89,6 +96,16 @@ impl PyPublisher {
         _traceback: &PyAny,
     ) -> PyResult<()> {
         self.close(py)
+    }
+}
+
+impl Drop for PyPublisher {
+    fn drop(&mut self) {
+        Python::with_gil(|py| {
+            if let Err(err) = self.close(py) {
+                err.restore(py);
+            }
+        })
     }
 }
 
@@ -219,6 +236,7 @@ impl PyPublisher {
     }
 }
 
+/// Convert one or more Python items to an Arrow array.
 fn items_to_array(py: Python, items: &PyAny, field: &FieldRef) -> PyResult<ArrayRef> {
     let pyarrow = py.import("pyarrow")?;
     let numpy = py.import("numpy")?;

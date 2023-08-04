@@ -1,0 +1,12 @@
+[package]
+name = "generate_typing"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[[bin]]
+name = "generate_data_types"
+path = "src/generate_data_types.rs"
+
+[dependencies]
+pyella = { path = ".." }

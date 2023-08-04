@@ -9,18 +9,27 @@ use crate::{
     utils::{deserialize_py, serialize_py, wait_for_future},
 };
 
-#[derive(Debug, Clone, derive_more::Into, derive_more::From)]
+/// Handle for interacting with an ella datastore.
+#[derive(Debug, Clone, derive_more::From)]
 #[pyclass(name = "Ella")]
 pub struct PyElla {
     inner: Arc<Ella>,
 }
 
+/// Connect to a remote ella datastore.
 #[pyfunction]
 pub fn connect(py: Python, addr: &str) -> crate::Result<PyElla> {
     let inner = Arc::new(wait_for_future(py, ella::connect(addr))?);
     Ok(PyElla { inner })
 }
 
+/// Open the datastore at the given path.
+///
+/// Args:
+///     root: Path to the datastore.
+///     serve: If not `None` then start an API server on the given address.
+///     config: Config used to create the datastore if `create` is `True`.
+///     create: If `True` then create the datastore if it doesn't exist.
 #[pyfunction]
 #[pyo3(signature = (root, serve="127.0.0.1:50052".to_string(), config=None, create=false))]
 pub fn open(
@@ -88,5 +97,15 @@ impl PyElla {
         _traceback: &PyAny,
     ) -> ella::Result<()> {
         self.shutdown(py)
+    }
+}
+
+impl Drop for PyElla {
+    fn drop(&mut self) {
+        Python::with_gil(|py| {
+            if let Err(err) = self.shutdown(py) {
+                PyErr::from(err).restore(py);
+            }
+        })
     }
 }

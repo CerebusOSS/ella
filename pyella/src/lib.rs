@@ -5,7 +5,10 @@ mod lazy;
 mod table;
 mod utils;
 
+use dataframe::{PyColumn, PyDataFrame};
+use lazy::{LazyIter, PyLazy};
 use pyo3::{prelude::*, types::PyString};
+use table::{publisher::PyPublisher, PyColumnInfo, PyTable, PyTopicInfo, TableAccessor};
 use tracing_subscriber::{
     filter::LevelFilter, prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt,
     EnvFilter, Layer,
@@ -13,6 +16,7 @@ use tracing_subscriber::{
 
 pub use self::ella::{connect, open, PyElla};
 pub use ::ella::{Error, Result};
+pub use data_types::generate_py_types;
 
 pub(crate) use data_types::unwrap_dtype;
 pub(crate) use table::{column, topic};
@@ -28,6 +32,15 @@ fn pyella(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add("runtime", utils::TokioRuntime::new())?;
 
     m.add_class::<PyElla>()?;
+    m.add_class::<TableAccessor>()?;
+    m.add_class::<PyTable>()?;
+    m.add_class::<PyDataFrame>()?;
+    m.add_class::<PyPublisher>()?;
+    m.add_class::<PyLazy>()?;
+    m.add_class::<LazyIter>()?;
+    m.add_class::<PyColumnInfo>()?;
+    m.add_class::<PyColumn>()?;
+    m.add_class::<PyTopicInfo>()?;
 
     m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_function(wrap_pyfunction!(connect, m)?)?;
@@ -35,10 +48,14 @@ fn pyella(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(topic, m)?)?;
     m.add_function(wrap_pyfunction!(now, m)?)?;
 
-    data_types::add_module(py, m)?;
+    data_types::add_datatypes(py, m)?;
     Ok(())
 }
 
+/// Get the current system time.
+///
+/// This is the recommended way to generate ella timestamps as it has higher
+/// precision than the built-in `datetime` module.
 #[pyfunction]
 pub(crate) fn now(py: Python) -> PyResult<&PyAny> {
     let dt = py.import("numpy")?.getattr("datetime64")?;

@@ -3,5 +3,7 @@
 # Rust
 target
 
-# pyenv overrides
+# Python
+*.so
+__pycache__
 .python-version

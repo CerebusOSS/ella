@@ -16,6 +16,7 @@ pub struct PyDataFrame {
     inner: DataFrame,
 }
 
+/// A collection of rows from multiple columns.
 #[pymethods]
 impl PyDataFrame {
     fn __getitem__(&self, py: Python, key: PyObject) -> PyResult<PyColumn> {
@@ -30,6 +31,7 @@ impl PyDataFrame {
         }
     }
 
+    /// Convert the dataframe to an Arrow table.
     fn to_arrow(&self, py: Python) -> PyResult<PyObject> {
         let mut py_arrays = vec![];
         for col in self.columns() {
@@ -47,10 +49,12 @@ impl PyDataFrame {
             .to_object(py))
     }
 
+    /// Get the dataframe's equivalent arrow schema.
     fn arrow_schema(&self, py: Python) -> PyObject {
         PyArrowType(self.inner.arrow_schema()).into_py(py)
     }
 
+    /// Get a column by index.
     fn icol(&self, i: usize) -> PyResult<PyColumn> {
         if i < self.inner.ncols() {
             Ok(self.inner.column(i).clone().into_inner().into())
@@ -61,6 +65,7 @@ impl PyDataFrame {
         }
     }
 
+    /// Get a column by name.
     fn col(&self, name: &str) -> PyResult<PyColumn> {
         for col in self.inner.columns() {
             if col.name() == name {
@@ -70,6 +75,7 @@ impl PyDataFrame {
         Err(PyKeyError::new_err(format!("column \"{name}\" not found")))
     }
 
+    /// Get a list of all columns in the dataframe.
     fn columns(&self) -> Vec<PyColumn> {
         self.inner
             .columns()

@@ -4,6 +4,7 @@ use pyo3::{prelude::*, types::PyTuple};
 
 use crate::data_types::wrap_dtype;
 
+/// A collection of rows from a single column.
 #[derive(Debug, Clone, derive_more::From, derive_more::Into)]
 #[pyclass(name = "Column")]
 pub struct PyColumn {
@@ -12,26 +13,35 @@ pub struct PyColumn {
 
 #[pymethods]
 impl PyColumn {
+    /// The shape of the column.
+    ///
+    /// The first axis is the number of rows.
     #[getter]
     pub fn shape(&self) -> Vec<usize> {
         self.inner.shape().to_vec()
     }
 
+    /// The shape of each row.
+    ///
+    /// Returns `None` if the column contains scalar values.
     #[getter]
     pub fn row_shape(&self) -> Option<Vec<usize>> {
         self.inner.row_shape().map(|row| row.to_vec())
     }
 
+    /// Whether the column values are nullable.
     #[getter]
     pub fn nullable(&self) -> bool {
         self.inner.nullable()
     }
 
+    /// The data type of the column values.
     #[getter]
     pub fn dtype(&self, py: Python) -> PyObject {
         wrap_dtype(py, self.inner.tensor_type())
     }
 
+    /// Convert the column to an Arrow array.
     pub fn to_arrow(&self, py: Python) -> PyResult<PyObject> {
         let values = self.inner.to_arrow().to_data().to_pyarrow(py)?;
 
