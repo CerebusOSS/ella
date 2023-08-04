@@ -178,7 +178,7 @@ pub(crate) fn column(
 
 /// The definition for a column in a table.
 ///
-/// To create a new column definition see the [`column`] function.
+/// To create a new column definition see the [`column()`] function.
 #[derive(Debug, Clone, derive_more::From, derive_more::Into)]
 #[pyclass(name = "ColumnInfo")]
 pub struct PyColumnInfo {

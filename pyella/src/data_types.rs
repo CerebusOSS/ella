@@ -97,12 +97,14 @@ pub(crate) fn unwrap_dtype(t: &PyAny) -> PyResult<TensorType> {
 /// Generate Python type stub file.
 ///
 /// Structure:
+/// ```text
 /// __all__ = [
 ///     <variables>,
 ///     <classes>,
 /// ]
 /// <class definitions>
 /// <variable definitions>
+/// ```
 fn write_py_type_info(root: &Path, names: &[(&str, &str)]) -> std::io::Result<()> {
     let mut f = File::create(root.join("types.pyi"))?;
     f.write_all(b"__all__ = [\n")?;
@@ -128,13 +130,14 @@ fn write_py_type_info(root: &Path, names: &[(&str, &str)]) -> std::io::Result<()
 /// Generate Python wrapper file.
 ///
 /// Structure:
-///
+/// ```text
 /// __all__ = [
 ///     <variables>,
 ///     <classes>,
 /// ]
 /// <import classes>
 /// <define variables>
+/// ```
 fn write_py_type_wrapper(root: &Path, names: &[(&str, &str)]) -> std::io::Result<()> {
     let mut f = File::create(root.join("types.py"))?;
 
