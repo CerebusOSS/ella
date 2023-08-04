@@ -17,6 +17,9 @@ pub struct PyElla {
 }
 
 /// Connect to a remote ella datastore.
+///
+/// Args:
+///     addr: address of the API server
 #[pyfunction]
 pub fn connect(py: Python, addr: &str) -> crate::Result<PyElla> {
     let inner = Arc::new(wait_for_future(py, ella::connect(addr))?);
@@ -66,20 +69,27 @@ pub fn open(
 
 #[pymethods]
 impl PyElla {
+    /// Get or create datastore tables.
     #[getter]
     fn tables(&self) -> TableAccessor {
         self.inner.clone().into()
     }
 
+    /// Create a new lazily evaluated query.
+    ///
+    /// Args:
+    ///     sql: SQL expression used to generate the query
     fn query(&self, py: Python, sql: String) -> PyResult<PyLazy> {
         let plan = wait_for_future(py, self.inner.query(sql))?;
         Ok(plan.into())
     }
 
+    /// Shutdown the datastore.
     fn shutdown(&self, py: Python) -> crate::Result<()> {
         wait_for_future(py, (*self.inner).clone().shutdown())
     }
 
+    /// Get the datastore configuration.
     #[getter]
     fn config(&self, py: Python) -> PyResult<PyObject> {
         serialize_py(py, &self.inner.config())

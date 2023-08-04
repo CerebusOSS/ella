@@ -25,3 +25,17 @@ This should:
 - Create a tag for the new version
 
 Once the new tag is pushed to the repo, a new Github release and Docker image will be generated automatically by Github Actions.
+
+## Generating Python documentation
+
+Generating Python documentation requires pdoc:
+
+```shell
+pip install pdoc
+```
+
+To view the documentation, run:
+
+```shell
+pdoc ella -d google
+```

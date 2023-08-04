@@ -81,6 +81,11 @@ impl PyTable {
 }
 
 /// Create a new topic definition.
+///
+/// Args:
+///     columns: one or more column definitions
+///     temporary: if `True` then values written to the topic are not saved to disk.
+///     index: topic indices with the format `(column, ascending)`
 #[pyfunction]
 #[pyo3(signature = (*columns, temporary=false, index=Vec::new()))]
 pub(crate) fn topic(
@@ -149,6 +154,11 @@ pub struct PyViewInfo {
 }
 
 /// Create a new column definition.
+///
+/// Args:
+///     name: column name
+///     required: if `True` then column values can't be null
+///     row_shape: the shape of each row if the column is a tensor
 #[pyfunction]
 #[pyo3(signature = (name, data_type, required=false, row_shape=None))]
 pub(crate) fn column(
