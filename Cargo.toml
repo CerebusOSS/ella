@@ -1,5 +1,4 @@
 [workspace]
-exclude = ["ella-cli"]
 members = [
     "ella-common",
     "ella-tensor",
@@ -9,6 +8,7 @@ members = [
     "ella-cli",
     "ella",
     "pyella",
+    "pyella/generate_typing",
 ]
 resolver = "2"
 

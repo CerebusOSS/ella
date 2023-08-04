@@ -19,18 +19,36 @@ impl PyLazy {
         Ok(LazyIter { inner })
     }
 
+    /// Execute the query and collect all rows into a dataframe.
     fn execute(&self, py: Python) -> crate::Result<PyDataFrame> {
         Ok(wait_for_future(py, self.inner.clone().execute())?.into())
     }
 
-    fn create_view(&self, py: Python, table: &str) -> PyResult<Self> {
-        let plan = wait_for_future(py, self.inner.clone().create_view(table).into_future())?;
+    /// Register the query as a permanent view in the datastore.
+    ///
+    /// Args:
+    ///     table: the name of the view
+    ///     if_not_exists: if `True` then do nothing if the view already exists
+    #[pyo3(signature = (table, if_not_exists = true))]
+    fn create_view(&self, py: Python, table: &str, if_not_exists: bool) -> PyResult<Self> {
+        let plan = if if_not_exists {
+            wait_for_future(
+                py,
+                self.inner
+                    .clone()
+                    .create_view(table)
+                    .if_not_exists()
+                    .into_future(),
+            )?
+        } else {
+            wait_for_future(py, self.inner.clone().create_view(table).into_future())?
+        };
         Ok(plan.into())
     }
 }
 
 #[pyclass]
-struct LazyIter {
+pub(crate) struct LazyIter {
     inner: LazyStream,
 }
 

@@ -89,7 +89,7 @@ pub trait Column: Debug + Send + Sync {
 
     fn row_shape(&self) -> Option<Dyn> {
         let shape = self.shape();
-        if shape.ndim() > 0 {
+        if shape.ndim() > 1 {
             Some(shape.remove_axis(Axis(0)))
         } else {
             None

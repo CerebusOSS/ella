@@ -10,3 +10,6 @@ generate_release_notes version:
 
 generate_readme:
     cd ella; cargo rdme
+
+generate_python:
+    cargo run -p generate_typing --bin generate_data_types

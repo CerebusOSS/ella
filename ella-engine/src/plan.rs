@@ -82,6 +82,18 @@ impl Plan {
         };
         self
     }
+
+    pub fn try_map<F, E>(mut self, f: F) -> crate::Result<Self>
+    where
+        F: FnOnce(LogicalPlan) -> Result<LogicalPlan, E>,
+        crate::Error: From<E>,
+    {
+        self.inner = match self.inner {
+            PlanInner::Resolved(plan) => PlanInner::Resolved(f(plan)?),
+            PlanInner::Stub(plan) => PlanInner::Stub(f(plan)?),
+        };
+        Ok(self)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

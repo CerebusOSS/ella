@@ -1524,6 +1524,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "generate_typing"
+version = "0.1.4"
+dependencies = [
+ "pyella",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2615,6 +2622,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -1,9 +1,12 @@
 use std::{fmt::Display, ops::Deref, sync::Arc};
 
-use arrow::record_batch::RecordBatch;
+use arrow::{
+    datatypes::{Fields, Schema},
+    record_batch::RecordBatch,
+};
 use ella_common::row::RowFormat;
 
-use crate::{NamedColumn, Shape, Tensor, TensorValue};
+use crate::{tensor_schema, NamedColumn, Shape, Tensor, TensorValue};
 
 use super::{batch_to_columns, frame_to_batch, print::print_frames, Frame};
 
@@ -40,22 +43,52 @@ impl DataFrame {
         R::view(batch.num_rows(), &batch.schema().fields, batch.columns())
     }
 
+    pub fn ncols(&self) -> usize {
+        self.columns.len()
+    }
+
+    pub fn nrows(&self) -> usize {
+        self.rows
+    }
+
+    pub fn column(&self, i: usize) -> &NamedColumn {
+        &self.columns[i]
+    }
+
     pub fn pretty_print(&self) -> impl Display + '_ {
         print_frames(&[self])
+    }
+
+    pub fn arrow_schema(&self) -> Schema {
+        Schema::new(
+            self.columns()
+                .map(|col| {
+                    Arc::new(tensor_schema(
+                        col.name().to_string(),
+                        col.tensor_type(),
+                        col.row_shape(),
+                        col.nullable(),
+                    ))
+                })
+                .collect::<Fields>(),
+        )
     }
 }
 
 impl Frame for DataFrame {
+    #[inline]
     fn ncols(&self) -> usize {
-        self.columns.len()
+        self.ncols()
     }
 
+    #[inline]
     fn nrows(&self) -> usize {
-        self.rows
+        self.nrows()
     }
 
+    #[inline]
     fn column(&self, i: usize) -> &NamedColumn {
-        &self.columns[i]
+        self.column(i)
     }
 }
 

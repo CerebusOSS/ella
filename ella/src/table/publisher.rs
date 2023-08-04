@@ -24,6 +24,10 @@ impl Publisher {
         let schema = self.arrow_schema.clone();
         RowSink::try_new(self, schema, buffer)
     }
+
+    pub fn arrow_schema(&self) -> &SchemaRef {
+        &self.arrow_schema
+    }
 }
 
 impl Debug for Publisher {
