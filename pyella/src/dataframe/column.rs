@@ -6,7 +6,7 @@ use crate::data_types::wrap_dtype;
 
 /// A collection of rows from a single column.
 #[derive(Debug, Clone, derive_more::From, derive_more::Into)]
-#[pyclass(name = "Column")]
+#[pyclass(name = "Column", module = "ella.frame")]
 pub struct PyColumn {
     inner: ColumnRef,
 }

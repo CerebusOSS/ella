@@ -17,7 +17,7 @@ use crate::{data_types::wrap_dtype, utils::wait_for_future};
 
 /// Provides access to table in the datastore.
 #[derive(Debug, derive_more::From, derive_more::Into)]
-#[pyclass]
+#[pyclass(module = "ella.table")]
 pub(crate) struct TableAccessor {
     inner: Arc<Ella>,
 }
@@ -55,7 +55,7 @@ impl TableAccessor {
 
 /// A topic or view in the datastore.
 #[derive(Debug, derive_more::From, derive_more::Into)]
-#[pyclass(name = "Table")]
+#[pyclass(name = "Table", module = "ella.table")]
 pub struct PyTable {
     inner: Table,
 }
@@ -142,13 +142,13 @@ impl From<TableInfo> for PyTableInfo {
 
 /// The definition for a datastore topic.
 #[derive(Debug, Clone, derive_more::From, derive_more::Into)]
-#[pyclass(name = "TopicInfo")]
+#[pyclass(name = "TopicInfo", module = "ella.table")]
 pub struct PyTopicInfo {
     inner: TopicInfo,
 }
 
 #[derive(Debug, Clone, derive_more::From, derive_more::Into)]
-#[pyclass(name = "ViewInfo")]
+#[pyclass(name = "ViewInfo", module = "ella.table")]
 pub struct PyViewInfo {
     inner: ViewInfo,
 }
@@ -180,7 +180,7 @@ pub(crate) fn column(
 ///
 /// To create a new column definition see the [`column()`] function.
 #[derive(Debug, Clone, derive_more::From, derive_more::Into)]
-#[pyclass(name = "ColumnInfo")]
+#[pyclass(name = "ColumnInfo", module = "ella.table")]
 pub struct PyColumnInfo {
     inner: Column,
 }

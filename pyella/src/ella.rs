@@ -11,7 +11,7 @@ use crate::{
 
 /// Handle for interacting with an ella datastore.
 #[derive(Debug, Clone, derive_more::From)]
-#[pyclass(name = "Ella")]
+#[pyclass(name = "Ella", module = "ella")]
 pub struct PyElla {
     inner: Arc<Ella>,
 }

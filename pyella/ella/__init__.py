@@ -3,6 +3,7 @@ __all__ = [
     "types",
     "table",
     "frame",
+    "lazy",
     "open",
     "connect",
     "column",
@@ -25,7 +26,7 @@ __all__ = [
     "string",
 ]
 
-from . import types, table, frame
+from . import types, table, frame, lazy
 
 from .types import (
     bool_,

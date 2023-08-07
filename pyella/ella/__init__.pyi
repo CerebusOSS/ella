@@ -2,6 +2,7 @@ __all__ = [
     "types",
     "table",
     "frame",
+    "lazy",
     "open",
     "connect",
     "column",
@@ -27,7 +28,7 @@ __all__ = [
 import numpy
 import typing as T
 
-from ella import types, table, frame
+from ella import types, table, frame, lazy
 from ella.types import (
     bool_,
     int8,
@@ -52,7 +53,7 @@ class Ella:
     def tables(self) -> table.TableAccessor: ...
     @property
     def config(self) -> T.Mapping[str, T.Any]: ...
-    def query(self, sql: str) -> frame.Lazy: ...
+    def query(self, sql: str) -> lazy.Lazy: ...
     def shutdown(self) -> None: ...
     def __enter__(self) -> "Ella": ...
     def __exit__(self, exc_type, exc_value, traceback) -> None: ...

@@ -11,14 +11,14 @@ pub(crate) fn add_datatypes(py: Python, m: &PyModule) -> PyResult<()> {
 }
 
 #[derive(Debug, Clone, Copy)]
-#[pyclass(subclass, name = "DataType")]
+#[pyclass(subclass, name = "DataType", module = "ella.types")]
 pub struct PyDataType;
 
 macro_rules! impl_type_wrappers {
     ($($t:tt),+) => {
         paste::paste! {
             $(
-            #[pyclass(extends = PyDataType)]
+            #[pyclass(extends = PyDataType, module="ella.types")]
             #[derive(Debug, Clone)]
             pub struct [<$t Type>];
 

@@ -11,7 +11,7 @@ use pyo3::{
 };
 
 #[derive(Debug, Clone, derive_more::From, derive_more::Into)]
-#[pyclass(name = "DataFrame")]
+#[pyclass(name = "DataFrame", module = "ella.frame")]
 pub struct PyDataFrame {
     inner: DataFrame,
 }

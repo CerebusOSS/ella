@@ -18,7 +18,7 @@ use crate::{dataframe::PyDataFrame, utils::wait_for_future};
 
 /// Writes rows to table.
 #[derive(Debug)]
-#[pyclass(name = "Publisher")]
+#[pyclass(name = "Publisher", module = "ella._internal")]
 pub struct PyPublisher {
     len: usize,
     capacity: usize,

@@ -6,8 +6,9 @@ use pyo3::prelude::*;
 
 use crate::{dataframe::PyDataFrame, utils::wait_for_future};
 
+/// A lazily executed query.
 #[derive(Debug, Clone, derive_more::From, derive_more::Into)]
-#[pyclass(name = "Lazy")]
+#[pyclass(name = "Lazy", module = "ella.lazy")]
 pub struct PyLazy {
     inner: Lazy,
 }
@@ -47,7 +48,7 @@ impl PyLazy {
     }
 }
 
-#[pyclass]
+#[pyclass(module = "ella.lazy")]
 pub(crate) struct LazyIter {
     inner: LazyStream,
 }
